@@ -18,10 +18,28 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            // Keystore never lives in the repo. Path + password via env, or the
+            // default local paths; builds without them still produce an APK,
+            // just unsigned-for-install.
+            val ks = file(System.getenv("GADGET_KEYSTORE") ?: System.getProperty("user.home") + "/.hermes/gadget-release.keystore")
+            val pwFile = file(System.getenv("GADGET_KEYSTORE_PASS_FILE")
+                ?: System.getProperty("user.home") + "/.hermes/gadget-release.pass")
+            if (ks.exists() && pwFile.exists()) {
+                storeFile = ks
+                storePassword = pwFile.readText().trim()
+                keyPassword = storePassword
+                keyAlias = "gadget"
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            if (signingConfigs.getByName("release").storeFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
