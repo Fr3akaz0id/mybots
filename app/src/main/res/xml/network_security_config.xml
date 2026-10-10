@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hermes gadget servers are usually plain ws:// on the home LAN (see
+     sdk docs/architecture.md). Allow cleartext transport; wss:// keeps working. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
