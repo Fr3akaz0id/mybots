@@ -8,11 +8,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.freaklair.hermesgadget"
+        applicationId = "com.freaklair.mybots"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.0.1-android"
+        versionCode = 1
+        versionName = "0.1-mvp"
         ndk {
             abiFilters += "arm64-v8a"
         }

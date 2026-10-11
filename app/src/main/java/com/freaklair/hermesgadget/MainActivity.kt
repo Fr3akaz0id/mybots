@@ -26,6 +26,26 @@ class MainActivity : AppCompatActivity() {
     private var micAsked = false
     private val wake = lazy { WakeDetector(this) }
 
+    // MyBots: robot-head visualization + 300 ms state poll. The head is the
+    // visual, PagerView keeps touch/strip. WebView sits under the pager.
+    private var head: HeadView? = null
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile private var resumed = false
+    private val headPoll = object : Runnable {
+        override fun run() {
+            try {
+                val r = root
+                if (r != null) head?.setBox(minOf(r.width, r.height) * 0.55f)
+                val cur = pager?.currentPage ?: 0
+                val eng = if (cur < engines.size) engines.getOrNull(cur) else null
+                val pm = getSystemService(android.os.PowerManager::class.java)
+                val screenOn = resumed && (pm?.isInteractive ?: true)
+                head?.setState(HeadState.derive(eng, screenOn))
+            } catch (_: Exception) { }
+            ui.postDelayed(this, 300)
+        }
+    }
+
     private val micPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         maybeStart()
     }
@@ -53,18 +73,23 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         hudRef?.stop()
+        ui.removeCallbacks(headPoll)
         if (wake.isInitialized()) wake.value.shutdown()
         engines.forEach { it.stop() }
         super.onDestroy()
     }
 
     override fun onStop() {
+        resumed = false
         getSharedPreferences("gadget", MODE_PRIVATE).edit().putBoolean("alive", false).apply()
         super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
+        resumed = true
+        ui.removeCallbacks(headPoll)
+        ui.post(headPoll)
         pager?.poke()
     }
 
@@ -97,12 +122,16 @@ class MainActivity : AppCompatActivity() {
 
         val r = root ?: return
         r.removeAllViews()
+        if (head == null) head = HeadView(this)
+        p.headMode = true
+        r.addView(head, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         r.addView(p, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         val hud = HudOverlay(this)
         hud.onGear = { openSettings() }
         hud.onWake = { toggleWake() }
-        hud.bandProvider = { pager?.hudBand() }
+        hud.bandProvider = { null }  // head mode: controls to edge margin, no core band
         hud.wakeOn = prefWakeEnabled()
         hud.start()
         hudRef = hud

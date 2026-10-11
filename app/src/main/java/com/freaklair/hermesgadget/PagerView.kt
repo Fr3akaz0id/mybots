@@ -54,6 +54,11 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
         longPressIdx = -1
     }
 
+    // headMode: robot-head visualization (MyBots) — skip the core-bitmap blit
+    // and the black fill; the HeadView WebView below draws the head, and this
+    // view keeps only the strip + touch arbitration.
+    var headMode = false
+
     private var down = false
     private var downX = 0f
     private var downY = 0f
@@ -137,11 +142,11 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
     }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(Color.BLACK)
+        if (!headMode) canvas.drawColor(Color.BLACK)
         val i = currentPage
         if (i < engines.size) {
             val e = engines[i]
-            val r = panelRect(e)
+            val r = if (headMode) null else panelRect(e)
             if (r != null) {
                 try {
                     val (w, h) = e.size()

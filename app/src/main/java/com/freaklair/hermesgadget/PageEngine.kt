@@ -29,18 +29,26 @@ class PageEngine(private val context: Context, val profile: Profile) {
     var width = 480
     var height = 480
 
+    // Head-state bookkeeping (MyBots): transport liveness + last talk release.
+    @Volatile var wsOpen = false
+        private set
+    @Volatile var closeFails = 0
+    @Volatile var lastTouchUpAt = 0L
+
     private val prefs = context.getSharedPreferences("gadget", Context.MODE_PRIVATE)
 
     private val transport = WsTransport(
-        onOpen = { post { if (ptr != 0L) NativeBridge.nativeTransportOpen(ptr) } },
+        onOpen = { wsOpen = true; closeFails = 0; post { if (ptr != 0L) NativeBridge.nativeTransportOpen(ptr) } },
         onText = { s -> post { if (ptr != 0L) NativeBridge.nativeTransportText(ptr, s) } },
         onBinary = { b -> post { if (ptr != 0L) NativeBridge.nativeTransportBinary(ptr, b) } },
-        onClose = { r -> post { if (ptr != 0L) NativeBridge.nativeTransportClosed(ptr, r) } },
+        onClose = { r -> wsOpen = false; closeFails++; post { if (ptr != 0L) NativeBridge.nativeTransportClosed(ptr, r) } },
     )
 
     private val mic = MicDriver(context, { foreground && !muted }) { samples -> post { if (ptr != 0L) NativeBridge.nativeMicSamples(ptr, samples) } }
     private val speaker = SpeakerDriver(context) { foreground && !muted }
     fun micActive(): Boolean = mic.busy
+    fun speakingNow(): Boolean = speaker.streaming || speaker.busy()
+    fun lastAudioAt(): Long = speaker.audioAt
     private val storage = PrefStorage(prefs)
 
     init {
@@ -128,8 +136,10 @@ class PageEngine(private val context: Context, val profile: Profile) {
 
     fun post(block: () -> Unit) { queue.offer(block) }
 
-    fun touch(touching: Boolean, x: Int, y: Int) =
+    fun touch(touching: Boolean, x: Int, y: Int) {
+        if (!touching) lastTouchUpAt = System.currentTimeMillis()
         post { if (ptr != 0L) NativeBridge.nativeTouch(ptr, if (touching) 1 else 0, x, y) }
+    }
 
     fun status(): String = try { if (ptr != 0L) NativeBridge.nativeStatus(ptr) else "{}" } catch (e: Exception) { "{}" }
 

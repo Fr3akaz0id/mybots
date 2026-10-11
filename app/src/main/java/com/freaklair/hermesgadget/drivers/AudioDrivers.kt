@@ -123,17 +123,22 @@ class SpeakerDriver(context: Context, private val gate: () -> Boolean = { true }
     @Volatile private var track: AudioTrack? = null
     @Volatile private var streamEnded = false
     @Volatile private var pending = 0
+    @Volatile var streaming = false   // true from begin() until end()/abort()
+        private set
+    @Volatile var audioAt = 0L        // last begin() wall-clock ms
     private val lock = Object()
     private var minSize = 0
 
     override fun begin(rate: Int): Boolean {
         if (!gate()) { android.util.Log.i("hgspeaker", "begin rate=$rate REFUSED gate"); return false }
+        audioAt = System.currentTimeMillis()
         val old = track
         if (old != null && rate == this.rate) {
             // Next queued reply: append to the live track. Replacing it would
             // silently drop the previous stream's buffered tail (~1 s), which
             // is exactly the "queue answers, each one cuts off" symptom.
             streamEnded = false
+            streaming = true
             android.util.Log.i("hgspeaker", "begin rate=$rate CONTINUE track")
             return true
         }
@@ -172,6 +177,7 @@ class SpeakerDriver(context: Context, private val gate: () -> Boolean = { true }
         t.setVolume(volumePercent())
         t.play()
         track = t
+        streaming = true
         return true
     }
 
@@ -188,12 +194,14 @@ class SpeakerDriver(context: Context, private val gate: () -> Boolean = { true }
 
     override fun end() {
         streamEnded = true
+        streaming = false
         val t = track
         val pl = if (t != null) t.playbackHeadPosition.toLong() * 1000L / rate else 0L
         android.util.Log.i("hgspeaker", "end pendingMs=${pending.toLong() * 1000L / rate} playedMs=$pl")
     }
 
     override fun abort() {
+        streaming = false
         val t = track
         if (t != null) android.util.Log.i("hgspeaker",
             "abort pendingMs=${pending.toLong() * 1000L / rate} playedMs=${t.playbackHeadPosition.toLong() * 1000L / rate}")
