@@ -1,0 +1,11 @@
+packages:
+  - site
+
+# esbuild and workerd need their install scripts: esbuild fetches its native
+# binary and workerd the runtime the Cloudflare plugin runs the Worker in.
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+allowBuilds:
+  esbuild: true
+  workerd: true

@@ -1,0 +1,73 @@
+{
+  "name": "robot-heads",
+  "version": "0.3.0",
+  "description": "Animated 3D robot heads for React: glossy TV-headed bots in four shapes, with LED-matrix faces that show what an agent is doing (thinking, searching, listening, speaking and more). 2D canvas, no WebGL, no runtime dependencies.",
+  "keywords": [
+    "react",
+    "robot",
+    "avatar",
+    "bot",
+    "agent",
+    "ai",
+    "animation",
+    "canvas",
+    "3d",
+    "mascot",
+    "avatars",
+    "llm",
+    "chatbot",
+    "led",
+    "status"
+  ],
+  "homepage": "https://github.com/fayazara/robot-heads#readme",
+  "bugs": {
+    "url": "https://github.com/fayazara/robot-heads/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fayazara/robot-heads.git"
+  },
+  "license": "MIT",
+  "author": "Fayaz Ahmed (https://x.com/fayazara)",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "dev": "pnpm --filter robot-heads-site run dev",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "deploy": "pnpm --filter robot-heads-site run deploy",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^4.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-dts": "^3.9.1"
+  }
+}
