@@ -21,6 +21,9 @@ import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
 // MAX_HOLD_MS. Hands-free: long sentences are never cut off.
 class WakeDetector(private val context: Context) {
 
+    // MyBots hook: called on every wake-word match (head hop/happy).
+    @Volatile var onMatch: (() -> Unit)? = null
+
     companion object {
         private const val TAG = "hgwake"
         private const val SR = 16000
@@ -140,6 +143,7 @@ class WakeDetector(private val context: Context) {
     // exists so a stuck mic can't hold the button forever.
     private fun fire(e: PageEngine) {
         Log.i(TAG, "wake -> ${e.name}")
+        try { onMatch?.invoke() } catch (_: Exception) { }
         val now = System.currentTimeMillis()
         holding = true
         holdStartAt = now

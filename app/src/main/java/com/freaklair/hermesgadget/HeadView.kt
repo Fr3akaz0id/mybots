@@ -62,6 +62,20 @@ class HeadView(context: Context) : WebView(context) {
         post { if (ready) evaluateJavascript("MB.size($size)", null) }
     }
 
+    fun poke() {
+        last = null  // next derived push must not get deduped away
+        post { if (ready) evaluateJavascript("MB.poke()", null) }
+    }
+
+    // device px -> CSS px relative to the view center (JS clamps at 700)
+    fun pointer(x: Float?, y: Float?) {
+        if (!ready) return
+        val css = resources.displayMetrics.density.let { if (it <= 0f) 1f else it }
+        val js = if (x == null || y == null) "MB.pointer(null,null)"
+                 else "MB.pointer(${(x - width / 2f) / css},${(y - height / 2f) / css})"
+        post { if (ready) evaluateJavascript(js, null) }
+    }
+
     // freeze the JS rAF loop when the app is off-screen
     override fun onPause() { super.onPause(); if (ready) evaluateJavascript("MB.hidden(true)", null) }
     override fun onResume() { super.onResume(); if (ready) evaluateJavascript("MB.hidden(false)", null) }

@@ -31,16 +31,21 @@ class MainActivity : AppCompatActivity() {
     private var head: HeadView? = null
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var resumed = false
+    @Volatile private var happyUntil = 0L
     private val headPoll = object : Runnable {
         override fun run() {
             try {
                 val r = root
                 if (r != null) head?.setBox(minOf(r.width, r.height) * 0.55f)
-                val cur = pager?.currentPage ?: 0
-                val eng = if (cur < engines.size) engines.getOrNull(cur) else null
-                val pm = getSystemService(android.os.PowerManager::class.java)
-                val screenOn = resumed && (pm?.isInteractive ?: true)
-                head?.setState(HeadState.derive(eng, screenOn))
+                if (System.currentTimeMillis() < happyUntil) {
+                    head?.setState(HeadState.HAPPY)
+                } else {
+                    val cur = pager?.currentPage ?: 0
+                    val eng = if (cur < engines.size) engines.getOrNull(cur) else null
+                    val pm = getSystemService(android.os.PowerManager::class.java)
+                    val screenOn = resumed && (pm?.isInteractive ?: true)
+                    head?.setState(HeadState.derive(eng, screenOn))
+                }
             } catch (_: Exception) { }
             ui.postDelayed(this, 300)
         }
@@ -112,9 +117,11 @@ class MainActivity : AppCompatActivity() {
         engines = profiles.all().map { pg -> PageEngine(this, pg).also { it.width = w; it.height = h } }
         val p = PagerView(this, engines)
         p.owner = object : PagerView.Owner {
-            override fun onPageChanged(index: Int) { }
+            override fun onPageChanged(index: Int) { head?.poke() }
             override fun onSettingsRequested() { openSettings() }
         }
+        p.onMotion = { x, y -> head?.pointer(x, y) }
+        p.onMotionEnd = { head?.pointer(null, null) }
         pager = p
         engines.forEach { e -> e.display = object : DisplayDriver {
             override fun flush(y0: Int, y1: Int) { pager?.poke() }
@@ -179,6 +186,13 @@ class MainActivity : AppCompatActivity() {
         d.setInitialState(prefWakeEnabled())
         d.start()
         d.setEnabled(prefWakeEnabled())
+        // MyBots: wake match -> hop + a short happy beat, then the poller
+        // returns to the derived state.
+        d.onMatch = {
+            happyUntil = System.currentTimeMillis() + 1600L
+            head?.poke()
+            head?.setState(HeadState.HAPPY)
+        }
         // poll the pager's current page — it owns the foreground state
         d.target = pager?.currentPage?.let { engines.getOrNull(it) }
         mainTick()

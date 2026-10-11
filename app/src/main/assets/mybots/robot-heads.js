@@ -1481,6 +1481,14 @@
     poke() {
       sim.poke();
     },
+    pointer(x, y) {
+      if (x === null || y === null || x === void 0 || y === void 0 || !Number.isFinite(x) || !Number.isFinite(y)) {
+        sim.pointer = null;
+      } else {
+        const d = Math.hypot(x, y);
+        sim.pointer = d < 700 ? { x, y } : null;
+      }
+    },
     hidden(h) {
       if (h) {
         if (raf) {

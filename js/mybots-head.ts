@@ -69,6 +69,15 @@ function loop(now: number) {
     if (shell) pal = { ...pal, shell: { ...pal.shell, albedo: linear(shell) } };
   },
   poke() { sim.poke(); },
+  pointer(x: number | null, y?: number | null) {
+    if (x === null || y === null || x === undefined || y === undefined ||
+        !Number.isFinite(x) || !Number.isFinite(y)) {
+      sim.pointer = null;
+    } else {
+      const d = Math.hypot(x, y);
+      sim.pointer = d < 700 ? { x: x, y: y } : null;
+    }
+  },
   hidden(h: boolean) {
     if (h) { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
     else if (!raf) { last = 0; raf = requestAnimationFrame(loop); }

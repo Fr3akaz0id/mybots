@@ -4,7 +4,7 @@ package com.freaklair.hermesgadget
 // contract a later native-Kotlin renderer must satisfy — keep it signal-based,
 // no invented timers.
 enum class HeadState {
-    IDLE, THINKING, SEARCHING, LISTENING, SPEAKING, ERROR, SLEEPING;
+    IDLE, THINKING, SEARCHING, LISTENING, SPEAKING, HAPPY, ERROR, SLEEPING;
 
     val js: String get() = name.lowercase()
 

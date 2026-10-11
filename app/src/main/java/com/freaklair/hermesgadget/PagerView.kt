@@ -59,6 +59,12 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
     // view keeps only the strip + touch arbitration.
     var headMode = false
 
+    // PagerView's touch events get forwarded so the head plays like on the
+    // playground: finger = pointer (eyes/head follow), release = look-neutral,
+    // poke = hop. Coordinates are in view pixels.
+    var onMotion: ((Float, Float) -> Unit)? = null
+    var onMotionEnd: (() -> Unit)? = null
+
     private var down = false
     private var downX = 0f
     private var downY = 0f
@@ -235,6 +241,7 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
                 longPressIdx = -1
                 if (engine != null) {
                     activeEngineTouch = true
+                    onMotion?.invoke(ev.x, ev.y)
                     val (cx, cy2) = toCore(engine, ev.x, ev.y)
                     engine.touch(true, cx, cy2)
                 } else activeEngineTouch = false
@@ -256,12 +263,14 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
                     // live preview: shift the drawn page by the drag fraction
                     invalidate()
                 } else if (activeEngineTouch) {
+                    onMotion?.invoke(ev.x, ev.y)
                     val (cx, cy2) = toCore(engine!!, ev.x, ev.y)
                     engine.touch(true, cx, cy2)
                 }
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val wasDown = down
                 longPress.removeCallbacks(longPressRunnable)
                 val lp = longPressIdx
                 val fired = longPressFired
@@ -285,6 +294,7 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
                     owner?.onSettingsRequested()
                 }
                 down = false; dragging = false; activeEngineTouch = false
+                if (wasDown) onMotionEnd?.invoke()
                 return true
             }
         }
