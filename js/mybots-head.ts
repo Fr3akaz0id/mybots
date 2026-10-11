@@ -5,7 +5,7 @@ import { RobotRenderer, frameFor, type Palette } from '../third_party/robot-head
 import { getShape } from '../third_party/robot-heads/src/tv/geometry';
 import { linear } from '../third_party/robot-heads/src/tv/light';
 import { parseColor } from '../third_party/robot-heads/src/color';
-import type { RobotHeadState } from '../third_party/robot-heads/src/types';
+import type { RobotHeadShape, RobotHeadState } from '../third_party/robot-heads/src/types';
 
 const STATES: RobotHeadState[] = ['idle', 'thinking', 'searching', 'listening', 'speaking', 'working', 'happy', 'error', 'sleeping'];
 
@@ -22,6 +22,8 @@ let pal: Palette = {
 
 const box = document.getElementById('box') as HTMLDivElement;
 const canvas = document.getElementById('head') as HTMLCanvasElement;
+
+let shapeName: string = 'rectangle';
 
 function frame() { return frameFor(shape, true, size); }
 
@@ -133,6 +135,17 @@ let busyUntil = 0;
   color(hex: string) {
     const shell = parseColor(hex);
     if (shell) pal = { ...pal, shell: { ...pal.shell, albedo: linear(shell) } };
+    wakeLoop();
+  },
+  shape(name: string) {
+    const SHAPES = ['rectangle', 'square', 'circle', 'hexagon'];
+    if (SHAPES.indexOf(name) < 0) name = 'rectangle';
+    if (name !== shapeName) {
+      shapeName = name;
+      shape = getShape(name as RobotHeadShape);
+      applySize();
+    }
+    wakeLoop();
   },
   poke() { sim.poke(); busyUntil = performance.now() + 1500; wakeLoop(); },
   pointer(x: number | null, y?: number | null) {

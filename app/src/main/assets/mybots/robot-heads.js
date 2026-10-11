@@ -1423,6 +1423,7 @@
   };
   var box = document.getElementById("box");
   var canvas = document.getElementById("head");
+  var shapeName = "rectangle";
   function frame() {
     return frameFor(shape, true, size);
   }
@@ -1552,6 +1553,17 @@
     color(hex) {
       const shell = parseColor(hex);
       if (shell) pal = { ...pal, shell: { ...pal.shell, albedo: linear(shell) } };
+      wakeLoop();
+    },
+    shape(name) {
+      const SHAPES2 = ["rectangle", "square", "circle", "hexagon"];
+      if (SHAPES2.indexOf(name) < 0) name = "rectangle";
+      if (name !== shapeName) {
+        shapeName = name;
+        shape = getShape(name);
+        applySize();
+      }
+      wakeLoop();
     },
     poke() {
       sim.poke();

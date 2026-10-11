@@ -36,7 +36,13 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             try {
                 val r = root
-                if (r != null) head?.setBox(minOf(r.width, r.height) * 0.55f)
+                if (r != null) {
+                    val hv = head
+                    val w0 = if (hv != null && hv.width > 0) hv.width else r.width
+                    val h0 = if (hv != null && hv.height > 0) hv.height else r.height
+                    head?.setBox(minOf(w0, h0) * 0.55f)
+                }
+                applyHeadConfig()
                 if (System.currentTimeMillis() < happyUntil) {
                     head?.setState(HeadState.HAPPY)
                 } else {
@@ -56,7 +62,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val settings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        headSideLayout(false)
         rebuild()  // profiles changed — pages follow the list
+        applyHeadConfig(force = true)  // close discards any live preview
+    }
+
+    // head look follows the active profile; pushed once per change. Settings
+    // previews bypass this via the broadcast, but tick must not overwrite a
+    // previewed look, so we dedupe on (shape,color) and let the preview stand.
+    private var appliedCfg: Pair<String, String>? = null
+    private fun applyHeadConfig(force: Boolean = false) {
+        val p = profiles.active() ?: return
+        val cfg = p.shape to p.color
+        if (!force && appliedCfg == cfg) return
+        appliedCfg = cfg
+        head?.setConfig(p.shape, p.color)
+    }
+
+    // live preview while the settings sheet is open (not persisted until save)
+    private val headPreview = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            val sh = i?.getStringExtra("shape") ?: return
+            head?.setConfig(sh, i.getStringExtra("color") ?: "")
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,6 +95,10 @@ class MainActivity : AppCompatActivity() {
         root = FrameLayout(this)
         root!!.setBackgroundColor(android.graphics.Color.BLACK)
         setContentView(root)
+
+        ContextCompat.registerReceiver(this, headPreview,
+            android.content.IntentFilter("com.freaklair.mybots.HEAD_PREVIEW"),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
 
         rebuild()  // builds engines + pager, starts them if the mic is granted
 
@@ -79,6 +111,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         hudRef?.stop()
         ui.removeCallbacks(headPoll)
+        try { unregisterReceiver(headPreview) } catch (_: Exception) { }
         if (wake.isInitialized()) wake.value.shutdown()
         engines.forEach { it.stop() }
         super.onDestroy()
@@ -167,7 +200,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() {
+        headSideLayout(true)   // landscape: slide the head left so the sheet can preview it live
         settings.launch(Intent(this, SettingsActivity::class.java))
+    }
+
+    // While the settings sheet is open, the head occupies the left viewport
+    // (landscape only) so shape/color taps preview beside the panel.
+    private fun headSideLayout(on: Boolean) {
+        val h = head ?: return
+        val lp = h.layoutParams as? FrameLayout.LayoutParams ?: return
+        val landscape = resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
+        if (on && landscape) {
+            lp.width = (resources.displayMetrics.widthPixels * 0.42f).toInt()
+            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.gravity = Gravity.START
+        } else {
+            lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.gravity = 0
+        }
+        h.layoutParams = lp
     }
 
     private fun maybeStart() {

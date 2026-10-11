@@ -1,6 +1,8 @@
 package com.freaklair.hermesgadget
 
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.method.SingleLineTransformationMethod
 import android.view.Gravity
@@ -16,7 +18,19 @@ import android.view.View
 
 // Profile settings, shown as a dim overlay above the gadget. One profile per
 // agent/host: pick one and it goes active + the gadget reconnects there.
+// Head look (shape + color) previews live on the robot behind the dim.
 class SettingsActivity : AppCompatActivity() {
+
+    companion object {
+        val SHAPES = listOf(
+            "rectangle" to "Rect", "square" to "Square",
+            "circle" to "Circle", "hexagon" to "Hex")
+        val COLORS = listOf(
+            "#3050AC" to "Blue", "#0E7C86" to "Cyan", "#0F8A5F" to "Green",
+            "#C77700" to "Amber", "#B23B3B" to "Red", "#6D4FC2" to "Violet",
+            "#C2447E" to "Pink", "#6E7480" to "Slate")
+        const val DEFAULT_COLOR = "#3050AC"
+    }
 
     private lateinit var profiles: ProfileStore
     private lateinit var group: RadioGroup
@@ -26,6 +40,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var emptyHint: TextView
     private lateinit var statusText: TextView
     private var currentId: String? = null
+    private var curShape = "rectangle"
+    private var curColor = DEFAULT_COLOR
+    private var applyingForm = false
+    private val shapeChips = ArrayList<android.widget.TextView>()
+    private val colorDots = ArrayList<View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +58,11 @@ class SettingsActivity : AppCompatActivity() {
         statusText = findViewById(R.id.settings_status)
 
         rebuildList()
+        buildShapeRow()
+        buildColorRow()
+        // A pre-checked radio never fires the listener — load the active
+        // profile so the form and the head look reflect it from the start.
+        profiles.active()?.let { loadIntoForm(it) }
 
         group.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == ViewGroup.NO_ID) return@setOnCheckedChangeListener
@@ -53,6 +77,94 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_delete).setOnClickListener { onDelete() }
         findViewById<Button>(R.id.btn_done).setOnClickListener { finish() }
     }
+
+    // ---- head look pickers ------------------------------------------------
+
+    private fun buildShapeRow() {
+        val row = findViewById<LinearLayout>(R.id.shape_row)
+        for ((key, label) in SHAPES) {
+            val chip = android.widget.TextView(this)
+            chip.text = label
+            chip.textSize = 13f
+            chip.gravity = Gravity.CENTER
+            chip.setTextColor(0xFFE8E8EC.toInt())
+            val lp = LinearLayout.LayoutParams(0, dp(38), 1f)
+            lp.marginEnd = dp(6)
+            chip.layoutParams = lp
+            chip.isClickable = true
+            chip.setOnClickListener {
+                curShape = key
+                updateShapeSelection()
+                sendPreview()
+            }
+            shapeChips.add(chip)
+            row.addView(chip)
+        }
+        updateShapeSelection()
+    }
+
+    private fun buildColorRow() {
+        val row = findViewById<LinearLayout>(R.id.color_row)
+        // rows of 4 keep the panel from overflowing in portrait
+        var sub = LinearLayout(this)
+        row.addView(sub)
+        COLORS.forEachIndexed { i, (hex, name) ->
+            if (i > 0 && i % 4 == 0) {
+                sub = LinearLayout(this)
+                sub.orientation = LinearLayout.HORIZONTAL
+                row.addView(sub)
+            }
+            val dot = View(this)
+            dot.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(hex))
+            }
+            val lp = LinearLayout.LayoutParams(dp(46), dp(46))
+            lp.marginEnd = dp(10); lp.topMargin = dp(6); lp.bottomMargin = dp(6)
+            dot.layoutParams = lp
+            dot.isClickable = true
+            dot.contentDescription = name
+            dot.setOnClickListener {
+                curColor = hex
+                updateColorSelection()
+                sendPreview()
+            }
+            dot.setOnLongClickListener {
+                statusText.text = "$name · $hex"; true
+            }
+            colorDots.add(dot)
+            sub.addView(dot)
+        }
+        updateColorSelection()
+    }
+
+    private fun updateShapeSelection() {
+        shapeChips.forEachIndexed { i, chip ->
+            val sel = SHAPES[i].first == curShape
+            chip.background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(if (sel) Color.parseColor("#3050AC") else Color.parseColor("#232329"))
+                setStroke(dp(1), if (sel) Color.parseColor("#7FA0FF") else Color.parseColor("#3A3A42"))
+            }
+        }
+    }
+
+    private fun updateColorSelection() {
+        colorDots.forEachIndexed { i, dot ->
+            (dot.background as GradientDrawable).setStroke(dp(3),
+                if (COLORS[i].first.equals(curColor, true)) Color.parseColor("#E8E8EC") else Color.parseColor("#232329"))
+        }
+    }
+
+    private fun sendPreview() {
+        if (applyingForm) return
+        sendBroadcast(Intent("com.freaklair.mybots.HEAD_PREVIEW")
+            .setPackage(packageName)
+            .putExtra("shape", curShape).putExtra("color", curColor))
+    }
+
+    private fun dp(v: Int): Int =
+        (v * resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
     private fun rebuildList() {
         group.removeAllViews()
@@ -88,12 +200,22 @@ class SettingsActivity : AppCompatActivity() {
         fName.setText(p.name)
         fUrl.setText(p.url)
         fToken.setText(p.token)
+        applyingForm = true
+        curShape = p.shape.ifEmpty { "rectangle" }
+        curColor = p.color.ifEmpty { DEFAULT_COLOR }
+        updateShapeSelection()
+        updateColorSelection()
+        applyingForm = false
+        sendPreview()
         statusText.text = "Editing: ${p.name}"
     }
 
     private fun newForm() {
         currentId = null
         fName.text.clear(); fUrl.text.clear(); fToken.text.clear()
+        curShape = "rectangle"; curColor = DEFAULT_COLOR
+        updateShapeSelection(); updateColorSelection()
+        sendPreview()
         statusText.text = "New profile — fill in and save"
     }
 
@@ -102,10 +224,14 @@ class SettingsActivity : AppCompatActivity() {
         val url = fUrl.text.toString().trim()
         if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
             statusText.text = "URL must start with ws:// or wss://"
+            android.widget.Toast.makeText(this, "URL must start with ws:// or wss://",
+                android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         val id = currentId ?: "p${System.currentTimeMillis()}"
-        profiles.upsert(Profile(id, name, url, fToken.text.toString().trim()))
+        val prof = Profile(id, name, url, fToken.text.toString().trim(), curShape, curColor)
+        android.util.Log.i("hgcfg", "onSave id=$id shape=$curShape color=$curColor")
+        profiles.upsert(prof)
         profiles.setActive(id)
         rebuildList()
         statusText.text = "Saved. Reconnecting to: $name"

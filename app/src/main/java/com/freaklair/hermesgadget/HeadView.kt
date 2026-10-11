@@ -32,6 +32,8 @@ class HeadView(context: Context) : WebView(context) {
                 ready = true
                 pendingState?.let { setState(it) }
                 pendingState = null
+                pendingConfig?.let { post { evaluateJavascript(it, null) } }
+                pendingConfig = null
             }
         }
         // route JS console/errors to logcat — this is our only JS test harness
@@ -66,6 +68,19 @@ class HeadView(context: Context) : WebView(context) {
         last = null  // next derived push must not get deduped away
         post { if (ready) evaluateJavascript("MB.poke()", null) }
     }
+
+    // head look (shape + shell color) — pushed eagerly, replayed once ready.
+    // Empty colorHex keeps the renderer's default palette.
+    private var lastShape: String? = null
+    private var lastColor: String? = null
+    fun setConfig(shape: String, colorHex: String) {
+        val js = StringBuilder("MB.shape('$shape')")
+        if (colorHex.isNotEmpty()) js.append(";MB.color('$colorHex')")
+        val cmd = js.toString()
+        if (ready) post { evaluateJavascript(cmd, null) } else pendingConfig = cmd
+        lastShape = shape; lastColor = colorHex
+    }
+    private var pendingConfig: String? = null
 
     // device px -> CSS px relative to the view center (JS clamps at 700)
     fun pointer(x: Float?, y: Float?) {
