@@ -62,16 +62,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val settings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        previewHold = false
         headSideLayout(false)
         rebuild()  // profiles changed — pages follow the list
         applyHeadConfig(force = true)  // close discards any live preview
     }
 
-    // head look follows the active profile; pushed once per change. Settings
-    // previews bypass this via the broadcast, but tick must not overwrite a
-    // previewed look, so we dedupe on (shape,color) and let the preview stand.
+    // head look follows the active profile; pushed once per change. While the
+    // settings editor is open we hold off, so previews of a non-active profile
+    // aren't clobbered by the 300ms poll.
     private var appliedCfg: Pair<String, String>? = null
+    @Volatile private var previewHold = false
     private fun applyHeadConfig(force: Boolean = false) {
+        if (previewHold && !force) return
         val p = profiles.active() ?: return
         val cfg = p.shape to p.color
         if (!force && appliedCfg == cfg) return
@@ -79,10 +82,13 @@ class MainActivity : AppCompatActivity() {
         head?.setConfig(p.shape, p.color)
     }
 
-    // live preview while the settings sheet is open (not persisted until save)
+    // live preview / editor signals from the settings sheet (not persisted
+    // until save). `editing=true` also shifts the head left in landscape.
     private val headPreview = object : android.content.BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
             val sh = i?.getStringExtra("shape") ?: return
+            previewHold = i.getBooleanExtra("editing", false)
+            headSideLayout(previewHold)
             head?.setConfig(sh, i.getStringExtra("color") ?: "")
         }
     }
@@ -200,7 +206,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() {
-        headSideLayout(true)   // landscape: slide the head left so the sheet can preview it live
         settings.launch(Intent(this, SettingsActivity::class.java))
     }
 
