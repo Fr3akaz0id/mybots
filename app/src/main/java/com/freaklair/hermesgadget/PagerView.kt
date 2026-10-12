@@ -25,7 +25,9 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
         fun onSettingsRequested()
     }
     var owner: Owner? = null
-    var settingsPage = true
+    // no "add profile" page anymore — profiles live in Settings, the pager
+    // shows exactly one page per configured profile.
+    var settingsPage = false
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -191,32 +193,33 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
         textPaint.textSize = nameSize
         textPaint.typeface = font
         val gap = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 18f, resources.displayMetrics)
-        val names = (0 until n).map { if (it < engines.size) engines[it].name else "+" }
+        val names = (0 until n).map { if (it < engines.size) engines[it].name else "" }
         val widths = names.map { textPaint.measureText(it) }
         val total = widths.sum() + gap * (n - 1)
         var x = (pageW - total) / 2f
         stripBox.clear()
         val boxPad = gap / 2f
+        // Active page: white name + single amber underline. Unread elsewhere
+        // reads as a lighter gray name — no second yellow bar (the old unread
+        // bar looked like a doubled underline when swiping).
+        val unreadColor = Color.parseColor("#9AA6B4")
+        val dotR = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2.5f, resources.displayMetrics)
         for (k in 0 until n) {
-            textPaint.color = if (k == currentPage) Color.parseColor("#E8E8EC") else Color.parseColor("#5A5A62")
-            if (k < engines.size && engines[k].muted) {
-                textPaint.color = if (k == currentPage) Color.parseColor("#66707A") else Color.parseColor("#3A3A42")
+            val active = k == currentPage
+            textPaint.color = when {
+                active -> Color.parseColor("#E8E8EC")
+                k < engines.size && engines[k].muted -> Color.parseColor("#3A3A42")
+                k < engines.size && engines[k].hasNotified.get() -> unreadColor
+                else -> Color.parseColor("#5A5A62")
             }
             canvas.drawText(names[k], x, cy, textPaint)
+            if (active) {
+                dotPaint.color = Color.parseColor("#E8C34A")
+                canvas.drawRect(x, cy + dotR * 3, x + widths[k], cy + dotR * 3 + dotR * 1.6f, dotPaint)
+            }
             stripBox.add(android.graphics.RectF(x - boxPad, pageH.toFloat(),
                 x + widths[k] + boxPad, pageH + stripH))
             x += widths[k] + gap
-        }
-        // unread markers: filled square under a background page that notified
-        val dotR = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2.5f, resources.displayMetrics)
-        var dx2 = (pageW - total) / 2f
-        val dy = cy + dotR * 3
-        for (k in 0 until n) {
-            if (k != currentPage && k < engines.size && engines[k].hasNotified.get()) {
-                dotPaint.color = Color.parseColor("#E8C34A")
-                canvas.drawRect(dx2, dy, dx2 + widths[k], dy + dotR * 1.6f, dotPaint)
-            }
-            dx2 += widths[k] + gap
         }
     }
 

@@ -108,7 +108,10 @@ class MainActivity : AppCompatActivity() {
     }
     private fun applyHeadConfig(force: Boolean = false) {
         if (previewHold && !force) return
-        val p = profiles.active() ?: return
+        // head look follows the page you're ON, not a global "active" —
+        // swipe to another agent, get that agent's shape+color.
+        val idx = (pager?.currentPage ?: 0).coerceIn(0, maxOf(0, engines.size - 1))
+        val p = profiles.all().let { if (idx < it.size) it[idx] else profiles.active() } ?: return
         val cfg = p.shape to p.color
         if (!force && appliedCfg == cfg) return
         appliedCfg = cfg
@@ -189,7 +192,7 @@ class MainActivity : AppCompatActivity() {
         engines = profiles.all().map { pg -> PageEngine(this, pg).also { it.width = w; it.height = h } }
         val p = PagerView(this, engines)
         p.owner = object : PagerView.Owner {
-            override fun onPageChanged(index: Int) { head?.poke() }
+            override fun onPageChanged(index: Int) { head?.poke(); applyHeadConfig(force = true) }
             override fun onSettingsRequested() { openSettings() }
         }
         p.onMotion = { x, y -> head?.pointer(x, y) }
