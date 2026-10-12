@@ -126,6 +126,8 @@ class SpeakerDriver(context: Context, private val gate: () -> Boolean = { true }
     @Volatile var streaming = false   // true from begin() until end()/abort()
         private set
     @Volatile var audioAt = 0L        // last begin() wall-clock ms
+    private var endAt = 0L            // last end() wall-clock ms — drain rule
+    private val drainMs = 1200L       // "fully drained" = this quiet after audio.end
     private val lock = Object()
     private var minSize = 0
 
@@ -134,18 +136,25 @@ class SpeakerDriver(context: Context, private val gate: () -> Boolean = { true }
         audioAt = System.currentTimeMillis()
         val old = track
         if (old != null && rate == this.rate) {
-            // Next queued reply: append to the live track. Replacing it would
-            // silently drop the previous stream's buffered tail (~1 s), which
-            // is exactly the "queue answers, each one cuts off" symptom.
-            streamEnded = false
-            streaming = true
-            android.util.Log.i("hgspeaker", "begin rate=$rate CONTINUE track")
-            return true
+            val idle = System.currentTimeMillis() - endAt
+            if (!streamEnded || idle < drainMs) {
+                // Next queued reply (or a new stream within the drain window):
+                // append to the live track. Replacing it would silently drop
+                // the previous stream's buffered tail (~1 s), which is exactly
+                // the "queue answers, each one cuts off" symptom.
+                streamEnded = false
+                streaming = true
+                android.util.Log.i("hgspeaker", "begin rate=$rate CONTINUE track")
+                return true
+            }
+            // same rate but long-quiet since audio.end: the track has fully
+            // drained — rebuild it instead of holding audio power across silence
         }
         if (old != null) {
-            // rate switch: let the old tail play out, then rebuild
+            // rate switch (or drained idle rebuild): let the old tail play out,
+            // then rebuild
             val t0 = System.currentTimeMillis()
-            while (System.currentTimeMillis() - t0 < 1200) {
+            while (System.currentTimeMillis() - t0 < drainMs) {
                 val left = synchronized(lock) { pending } - old.playbackHeadPosition
                 if (left <= 0) break
                 Thread.sleep(50)
@@ -195,6 +204,7 @@ class SpeakerDriver(context: Context, private val gate: () -> Boolean = { true }
     override fun end() {
         streamEnded = true
         streaming = false
+        endAt = System.currentTimeMillis()
         val t = track
         val pl = if (t != null) t.playbackHeadPosition.toLong() * 1000L / rate else 0L
         android.util.Log.i("hgspeaker", "end pendingMs=${pending.toLong() * 1000L / rate} playedMs=$pl")
