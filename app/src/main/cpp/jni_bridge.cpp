@@ -495,6 +495,16 @@ Java_com_freaklair_hermesgadget_NativeBridge_nativeScreen(JNIEnv* e, jobject, jl
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_freaklair_hermesgadget_NativeBridge_nativeUiState(JNIEnv* e, jobject, jlong ptr) {
+  if (!ptr) return e->NewStringUTF("");
+  std::vector<char> buf(65536);
+  int n = hgsim_ui_state((hgsim*)ptr, buf.data(), buf.size());
+  if (n < 0) n = 0;
+  if ((size_t)n > buf.size() - 1) n = (int)buf.size() - 1;
+  return e->NewStringUTF(std::string(buf.data(), (size_t)n).c_str());
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_freaklair_hermesgadget_NativeBridge_nativeConsole(JNIEnv* e, jobject, jlong ptr,
                                                            jstring line) {
   if (!ptr) return e->NewStringUTF("");

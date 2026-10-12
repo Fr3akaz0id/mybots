@@ -23,6 +23,10 @@ class MainActivity : AppCompatActivity() {
     private var root: FrameLayout? = null
     private var pager: PagerView? = null
     private var engines = listOf<PageEngine>()
+    private var drawer: ChatDrawer? = null
+    private val promptDialogs = HashMap<String, android.app.AlertDialog>()
+    private class CoreFeed { var user = ""; var body = ""; var active = false }
+    private val feeds = HashMap<String, CoreFeed>()
     private var micAsked = false
     private val wake = lazy { WakeDetector(this) }
 
@@ -53,6 +57,7 @@ class MainActivity : AppCompatActivity() {
                     head?.setState(HeadState.derive(eng, screenOn))
                 }
                 maybePairBanner(eng)
+                feedAndPrompts()
             } catch (_: Exception) { }
             ui.postDelayed(this, 300)
         }
@@ -188,11 +193,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun rebuild() {
         engines.forEach { it.stop() }
+        // prompt dialogs belong to the old engine generation — drop them with it
+        promptDialogs.values.forEach { it.dismiss() }
+        promptDialogs.clear()
+        feeds.clear()
         val (w, h) = panelSize()
         engines = profiles.all().map { pg -> PageEngine(this, pg).also { it.width = w; it.height = h } }
         val p = PagerView(this, engines)
         p.owner = object : PagerView.Owner {
-            override fun onPageChanged(index: Int) { head?.poke(); applyHeadConfig(force = true) }
+            override fun onPageChanged(index: Int) { head?.poke(); applyHeadConfig(force = true)
+                drawer?.bind(engines.getOrNull(index)?.profile)
+                engines.getOrNull(index)?.textUnread = false }
             override fun onSettingsRequested() { openSettings() }
         }
         p.onMotion = { x, y -> head?.pointer(x, y) }
@@ -210,6 +221,14 @@ class MainActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         r.addView(p, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        // text drawer sits above the pages, under the HUD chrome
+        if (drawer == null) drawer = ChatDrawer(this)
+        drawer?.let { dr ->
+            dr.bind(engines.getOrNull(0)?.profile)
+            dr.onOpen = { engines.getOrNull(pager?.currentPage ?: 0)?.textUnread = false }
+            r.addView(dr, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
         val hud = HudOverlay(this)
         hud.onGear = { openSettings() }
         hud.onWake = { toggleWake() }
@@ -262,6 +281,47 @@ class MainActivity : AppCompatActivity() {
             lp.gravity = 0
         }
         h.layoutParams = lp
+    }
+
+    /** Feed the chat drawer and raise mandatory yes/no prompts, per page. */
+    private fun feedAndPrompts() {
+        val dr = drawer ?: return
+        for (e in engines) {
+            val st = e.uiState()
+
+            // A pending prompt must always be answerable — non-cancelable dialog,
+            // one per page, the answering page gets focus so the answer can never
+            // reach the wrong agent.
+            val dlg = promptDialogs[e.id]
+            if (st.pendingPrompt && dlg == null) {
+                val t = if (st.promptTitle.isNotEmpty())
+                    "${e.profile.name} — ${st.promptTitle}" else e.profile.name
+                promptDialogs[e.id] = android.app.AlertDialog.Builder(this)
+                    .setCancelable(false)
+                    .setTitle(t)
+                    .setMessage(st.promptText)
+                    .setPositiveButton("Yes") { _, _ -> e.answerPrompt(true); promptDialogs.remove(e.id) }
+                    .setNegativeButton("No") { _, _ -> e.answerPrompt(false); promptDialogs.remove(e.id) }
+                    .show()
+                pager?.setPage(engines.indexOf(e).coerceAtLeast(0))
+            } else if (!st.pendingPrompt && dlg != null) {
+                promptDialogs.remove(e.id)?.dismiss()
+            }
+
+            if (!e.profile.showText) continue
+            val f = feeds.getOrPut(e.id) { CoreFeed() }
+            if (st.user.isEmpty()) f.user = ""
+            else if (st.user != f.user) { f.user = st.user; f.body = ""; f.active = false; dr.turnUser(e.id, st.user) }
+            val streaming = st.screen == "Responding" || st.screen == "Thinking"
+            if (st.body.isNotEmpty() && st.body != f.body && !st.body.startsWith("\"")) {
+                if (!f.active) { dr.turnUser(e.id, ""); f.active = true }
+                f.body = st.body
+                dr.turnAgent(e.id, st.body, done = false)
+                if ((pager?.currentPage ?: 0) != engines.indexOf(e) && !dr.isOpen())
+                    e.textUnread = true
+            }
+            if (f.active && !streaming && f.body.isNotEmpty()) { f.active = false; dr.finalizeTurn(e.id) }
+        }
     }
 
     private fun maybeStart() {

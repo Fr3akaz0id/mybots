@@ -27,6 +27,7 @@ object NativeBridge {
     external fun nativeSetSensor(ptr: Long, name: String, value: Double)
     external fun nativeEmitEvent(ptr: Long, name: String, dataJson: String, notify: Int)
     external fun nativeStatus(ptr: Long): String
+    external fun nativeUiState(ptr: Long): String
     external fun nativeRows(ptr: Long, y0: Int, y1: Int): Array<IntArray>
     external fun nativeSize(ptr: Long): IntArray
     external fun nativeScreen(ptr: Long): String

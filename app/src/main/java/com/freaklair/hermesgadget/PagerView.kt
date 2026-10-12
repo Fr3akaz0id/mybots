@@ -208,6 +208,7 @@ class PagerView(context: Context, private val engines: List<PageEngine>) : View(
             val active = k == currentPage
             textPaint.color = when {
                 active -> Color.parseColor("#E8E8EC")
+                k < engines.size && engines[k].textUnread -> Color.parseColor("#E8C34A")
                 k < engines.size && engines[k].muted -> Color.parseColor("#3A3A42")
                 k < engines.size && engines[k].hasNotified.get() -> unreadColor
                 else -> Color.parseColor("#5A5A62")

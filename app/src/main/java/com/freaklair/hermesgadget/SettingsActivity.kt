@@ -36,6 +36,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var editorTitle: TextView
     private lateinit var fName: EditText
     private lateinit var fUrl: EditText
+    private lateinit var fText: android.widget.Switch
     private lateinit var fToken: EditText
     private lateinit var emptyHint: TextView
     private lateinit var statusText: TextView
@@ -60,6 +61,7 @@ class SettingsActivity : AppCompatActivity() {
         fToken = findViewById(R.id.f_token)
         emptyHint = findViewById(R.id.empty_hint)
         statusText = findViewById(R.id.settings_status)
+        fText = findViewById(R.id.f_text)
 
         rebuildCards()
         buildShapeRow()
@@ -225,6 +227,7 @@ class SettingsActivity : AppCompatActivity() {
             applyingForm = true
             curShape = p.shape.ifEmpty { "rectangle" }
             curColor = p.color.ifEmpty { DEFAULT_COLOR }
+            fText.isChecked = p.showText
             applyingForm = false
             statusText.text = "Editing: ${p.name}"
         } else {
@@ -232,6 +235,7 @@ class SettingsActivity : AppCompatActivity() {
             editorTitle.text = "New profile"
             fName.text.clear(); fUrl.text.clear(); fToken.text.clear()
             curShape = "rectangle"; curColor = DEFAULT_COLOR
+            fText.isChecked = true
             statusText.text = "Fill in and save"
         }
         updateShapeSelection(); updateColorSelection()
@@ -258,7 +262,7 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
         val id = currentId ?: "p${System.currentTimeMillis()}"
-        val prof = Profile(id, name, url, fToken.text.toString().trim(), curShape, curColor)
+        val prof = Profile(id, name, url, fToken.text.toString().trim(), curShape, curColor, fText.isChecked)
         android.util.Log.i("hgcfg", "onSave id=$id shape=$curShape color=$curColor")
         profiles.upsert(prof)
         if (currentId == null) profiles.setActive(id)  // brand-new profile connects

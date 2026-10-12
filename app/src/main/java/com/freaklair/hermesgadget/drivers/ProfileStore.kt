@@ -5,7 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class Profile(val id: String, var name: String, var url: String, var token: String,
-                   var shape: String = "rectangle", var color: String = "")
+                   var shape: String = "rectangle", var color: String = "",
+                   var showText: Boolean = true)
 
 // Named connection profiles: one per agent/host the phone gadget connects to.
 // Persisted as JSON in the `gadget` prefs alongside the core's NVS keys. The
@@ -27,7 +28,8 @@ class ProfileStore(context: Context) {
                 o.optString("url", ""),
                 o.optString("token", ""),
                 o.optString("shape", "rectangle"),
-                o.optString("color", "")))
+                o.optString("color", ""),
+                o.optBoolean("showText", true)))
         }
         return out
     }
@@ -54,7 +56,7 @@ class ProfileStore(context: Context) {
         list.forEach { p ->
             arr.put(JSONObject().put("id", p.id).put("name", p.name)
                 .put("url", p.url).put("token", p.token)
-                .put("shape", p.shape).put("color", p.color))
+                .put("shape", p.shape).put("color", p.color).put("showText", p.showText))
         }
         android.util.Log.i("hgcfg", "save() ${arr.length()} profiles first=${list.firstOrNull()?.shape}")
         prefs.edit().putString("profiles", arr.toString()).apply()

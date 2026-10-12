@@ -18,6 +18,8 @@ class PageEngine(private val context: Context, val profile: Profile) {
         private set
     val hasNotified: java.util.concurrent.atomic.AtomicBoolean = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile var muted = false
+    /** True when this page has new drawer text the user hasn't read yet. */
+    @Volatile var textUnread = false
 
     private val queue = LinkedBlockingQueue<() -> Unit>()
     @Volatile private var running = false
@@ -149,6 +151,38 @@ class PageEngine(private val context: Context, val profile: Profile) {
     }
 
     fun status(): String = try { if (ptr != 0L) NativeBridge.nativeStatus(ptr) else "{}" } catch (e: Exception) { "{}" }
+
+    /** Data snapshot of the core's UI model — screen, texts, pending prompt.
+     *  The framebuffer stays invisible; everything the drawer and the prompt
+     *  dialog need comes through here as JSON. */
+    fun uiState(): UiState {
+        val raw = try { if (ptr != 0L) NativeBridge.nativeUiState(ptr) else "" } catch (e: Exception) { "" }
+        return UiState.parse(raw)
+    }
+
+    /** Answer a pending yes/no prompt; mirrors the firmware console commands
+     *  (which enforce the anti-mistap arm window themselves). */
+    fun answerPrompt(yes: Boolean) {
+        if (ptr != 0L) NativeBridge.nativeConsole(ptr, if (yes) "yes" else "no")
+    }
+
+    data class UiState(val screen: String, val title: String, val headline: String,
+                       val detail: String, val body: String, val hint: String,
+                       val promptId: String, val promptTitle: String, val promptText: String,
+                       val user: String) {
+        val pendingPrompt get() = promptId.isNotEmpty()
+        companion object {
+            fun parse(raw: String): UiState = try {
+                val o = org.json.JSONObject(raw)
+                UiState(o.optString("screen"), o.optString("title"), o.optString("headline"),
+                        o.optString("detail"), o.optString("body"), o.optString("hint"),
+                        o.optString("prompt_id"), o.optString("prompt_title"), o.optString("prompt_text"),
+                        o.optString("user"))
+            } catch (e: Exception) {
+                UiState("", "", "", "", "", "", "", "", "", "")
+            }
+        }
+    }
 
     fun size(): Pair<Int, Int> {
         val d = try { if (ptr != 0L) NativeBridge.nativeSize(ptr) else intArrayOf(0, 0) } catch (e: Exception) { intArrayOf(0, 0) }
