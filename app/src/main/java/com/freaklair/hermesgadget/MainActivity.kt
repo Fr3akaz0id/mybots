@@ -285,7 +285,7 @@ class MainActivity : AppCompatActivity() {
         if (dimmed == on) return
         dimmed = on
         val lp = window.attributes
-        lp.screenBrightness = if (on) 0.12f else -1f  // -1 = follow system setting
+        lp.screenBrightness = if (on) 0.10f else -1f  // -1 = follow system setting
         window.attributes = lp
     }
 
