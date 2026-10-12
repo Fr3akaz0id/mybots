@@ -49,7 +49,10 @@ class PageEngine(private val context: Context, val profile: Profile) {
     fun micActive(): Boolean = mic.busy
     fun speakingNow(): Boolean = speaker.streaming || speaker.busy()
     fun lastAudioAt(): Long = speaker.audioAt
-    private val storage = PrefStorage(prefs)
+    // Namespace the name key per profile so page A's core can't overwrite
+    // page B's identity in the shared prefs (device_key stays global on
+    // purpose — one device identity, many hubs).
+    private val storage = PrefStorage(prefs, mapOf("name" to "name__${profile.id}"))
 
     init {
         host.transport = transport
