@@ -104,6 +104,20 @@ try:
                 h._consumer = self
             except Exception:
                 pass
+            if getattr(h, "rescued", False):
+                return  # watchdog owns the stream; every later abort (cleanup included) is a no-op
+            if ("timeout" in str(reason).lower() and getattr(h, "audible", False)
+                    and isinstance(h, GadgetTTSHandle) and h.out is not None and not h.out.closed):
+                # Core's fixed 10 s wait expired while the provider was still landing clauses.
+                # The base abort would set _aborted, break the in-flight clause mid-synthesis
+                # and drain the queue unread — the "answer fell off" bug. Run the graceful
+                # adapter rescue instead: the drain task keeps running untouched.
+                try:
+                    self._loop.call_soon_threadsafe(
+                        asyncio.create_task, self._adapter.abort_streaming_tts(h, error=reason))
+                    return
+                except Exception:
+                    pass
         return _gadget_abort_orig(self, reason)
 
     _gadget_abort_hook._gadget_hook = True
@@ -117,6 +131,7 @@ except Exception:  # consumer module unavailable: rescue stays best-effort
 @dataclass
 class GadgetTTSHandle(StreamingTTSHandle):
     out: Any = None
+    rescued: bool = False   # finalisation-timeout watchdog owns this stream
 
 
 @dataclass
@@ -681,38 +696,40 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             handle.out.finish()
 
     async def abort_streaming_tts(self, handle: StreamingTTSHandle, error: Optional[str] = None) -> None:
-        # Finalization-timeout rescue: the drain pump is healthy, the stream was merely
-        # abandoned too early (core's fixed wait). A graceful finish keeps the pump pacing
-        # out every frame already synthesized and ends with audio.end, instead of the
-        # audio.abort that drops the hub queue AND the device's still-playing buffer.
-        # Un-synthesized queued text is still lost to the consumer, but audible audio is not.
-        if (isinstance(handle, GadgetTTSHandle) and not handle.aborted and error
-                and "timeout" in str(error).lower() and getattr(handle, "audible", False)):
-            logger.info("[Gadget] finalisation-timeout: finishing stream instead of aborting (%s)", error)
-            handle.aborted = True
-            # The core's fixed wait expired while one or more clauses were still being
-            # synthesized. Closing now would silently drop their audio the second it
-            # lands (the "fell off" reply). Let the consumer's drain task finish first;
-            # the stream stays open underneath, so late audio goes out paced as normal.
+        # Finalisation-timeout rescue. run_turn's fixed 10 s wait fires consumer.abort(); our
+        # abort hook routes that here when audio is already audible. Everything generated so
+        # far is either queued or mid-synthesis — killing it is what "fell off" means. Instead
+        # the consumer's own drain task finishes naturally (the hook skipped the base abort),
+        # calls finish_streaming_tts, and the stream ends with a paced audio.end. We just watch
+        # the door: if the provider stalls past the cap, close gracefully and regenerate only
+        # the clauses the drain never reached.
+        if (isinstance(handle, GadgetTTSHandle) and error and "timeout" in str(error).lower()
+                and getattr(handle, "audible", False) and not getattr(handle, "rescued", False)):
+            handle.rescued = True
+            logger.info("[Gadget] finalisation-timeout: stream kept alive, awaiting natural drain (%s)", error)
             consumer = getattr(handle, "_consumer", None)
+            # NB: consumer.done is a threading.Event — `not Event()` is always
+            # False. Poll _completed (set in _settle when the drain task ends).
             t0 = time.monotonic()
-            while (consumer is not None and not getattr(consumer, "done", True)
-                    and time.monotonic() - t0 < 30.0):
+            while (consumer is not None and not getattr(consumer, "_completed", False)
+                    and time.monotonic() - t0 < 45.0):
                 await asyncio.sleep(0.2)
-            logger.info("[Gadget] finalisation-timeout: held stream open %.1fs (drain done=%s)",
-                        time.monotonic() - t0, bool(consumer is None or getattr(consumer, "done", True)))
-            handle.out.finish()
-            # Whatever the drain never reached sits in the consumer's queue — snapshot
-            # it before the tail path, then generate it behind the rescued stream.
-            remaining = []
-            queue = getattr(consumer, "_queue", None)
-            if queue is not None:
-                try:
-                    remaining = [c for c in list(queue.queue) if isinstance(c, str) and c.strip()]
-                except Exception:
-                    remaining = []
-            if remaining:
-                asyncio.get_running_loop().create_task(self._stream_remainder(handle, consumer, remaining))
+            clean_end = bool(consumer is None or getattr(consumer, "_completed", False))
+            logger.info("[Gadget] finalisation-rescue: waited %.1fs (clean_end=%s)",
+                        time.monotonic() - t0, clean_end)
+            if not handle.out.closed:
+                handle.out.finish()
+            if not clean_end:
+                remaining: list = []
+                queue = getattr(consumer, "_queue", None)
+                if queue is not None:
+                    try:
+                        remaining = [c for c in list(queue.queue) if isinstance(c, str) and c.strip()]
+                    except Exception:
+                        remaining = []
+                if remaining:
+                    asyncio.get_running_loop().create_task(
+                        self._stream_remainder(handle, consumer, remaining))
             return
         if isinstance(handle, GadgetTTSHandle) and not handle.aborted:
             handle.aborted = True
