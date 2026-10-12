@@ -21,13 +21,21 @@ enum class HeadState {
             if (e.micActive()) return LISTENING
             if (e.speakingNow()) return SPEAKING
             val ui = e.lastUi
-            return if (ui.screen == "thinking" || ui.screen == "responding") {
-                // "Thinking": agent is turning the request over. A live status
-                // ("Sending...", tool phrases) means it is actively doing stuff.
-                // "Responding" without audible frames = composing the reply,
-                // audio being generated — same face, no silent idle.
-                if (ui.status.isNotEmpty()) WORKING else THINKING
-            } else IDLE
+            return when {
+                ui.screen == "thinking" || ui.screen == "responding" -> {
+                    // "Thinking": agent is turning the request over. A live status
+                    // ("Sending...", tool phrases) means it is actively doing stuff.
+                    // "Responding" without audible frames = composing the reply,
+                    // audio being generated — same face, no silent idle.
+                    val st = ui.status.lowercase()
+                    when {
+                        st.isEmpty() -> THINKING
+                        "search" in st -> SEARCHING
+                        else -> WORKING
+                    }
+                }
+                else -> IDLE
+            }
         }
     }
 }

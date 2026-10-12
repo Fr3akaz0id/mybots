@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var resumed = false
     @Volatile private var happyUntil = 0L
+    private var lastStateSig = ""
     private val headPoll = object : Runnable {
         override fun run() {
             try {
@@ -65,7 +66,14 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     val pm = getSystemService(android.os.PowerManager::class.java)
                     val screenOn = resumed && (pm?.isInteractive ?: true)
-                    head?.setState(HeadState.derive(eng, screenOn))
+                    val next = HeadState.derive(eng, screenOn)
+                    head?.setState(next)
+                    val ui = eng?.lastUi
+                    val sig = "${eng?.id}:$next/${ui?.screen ?: "∅"}/${ui?.status ?: ""}"
+                    if (sig != lastStateSig) {
+                        lastStateSig = sig
+                        android.util.Log.i("headstate", sig)
+                    }
                 }
                 if (resumed) setDim(idleFor > idleMs && !busy)
                 maybePairBanner(eng)
