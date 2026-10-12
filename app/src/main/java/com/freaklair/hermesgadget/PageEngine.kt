@@ -49,7 +49,10 @@ class PageEngine(private val context: Context, val profile: Profile) {
     private val mic = MicDriver(context, { foreground && !muted }) { samples -> post { if (ptr != 0L) NativeBridge.nativeMicSamples(ptr, samples) } }
     private val speaker = SpeakerDriver(context) { foreground && !muted }
     fun micActive(): Boolean = mic.busy
-    fun speakingNow(): Boolean = speaker.streaming || speaker.busy()
+    /** Audible-right-now, not "a stream is open": a stream stays open while the hub
+     *  generates, so `streaming` would show the talking face through every silent
+     *  generation gap. busy() is the honest frame-level truth; drained means drained. */
+    fun speakingNow(): Boolean = speaker.busy()
     fun lastAudioAt(): Long = speaker.audioAt
     // Namespace the name key per profile so page A's core can't overwrite
     // page B's identity in the shared prefs (device_key stays global on
