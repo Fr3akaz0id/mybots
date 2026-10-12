@@ -157,6 +157,39 @@ class ChatDrawer(context: Context) : FrameLayout(context) {
 
     var onOpen: (() -> Unit)? = null
 
+    // Drag-to-close: pull down anywhere in the panel while the transcript
+    // is at its top and the sheet follows the finger, then closes (or
+    // snaps back). Scroll first when there IS more text — natural sheet.
+    private var dragDownY = 0f
+    private var draggingPanel = false
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { dragDownY = ev.y; draggingPanel = false }
+            MotionEvent.ACTION_MOVE -> if (open && scroller.scrollY <= 0 &&
+                    ev.y - dragDownY > dp(8f)) draggingPanel = true
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> draggingPanel = false
+        }
+        return draggingPanel
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (!draggingPanel) return super.onTouchEvent(e)
+        val travel = (panel.height + panelClear).coerceAtLeast(1f)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                state = ((travel - (e.y - dragDownY)) / travel).coerceIn(0f, 1f)
+                requestLayout(); handle.invalidate()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                draggingPanel = false
+                open = state > 0.5f
+                animateTo(if (open) 1f else 0f)
+            }
+        }
+        return true
+    }
+
     fun isOpen(): Boolean = open
 
     fun open() {
