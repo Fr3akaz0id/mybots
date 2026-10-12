@@ -162,9 +162,22 @@ class PageEngine(private val context: Context, val profile: Profile) {
     @Volatile var lastUi: UiState = UiState.parse("{}")
         private set
 
+    private var lastStatus = ""
+    private var lastStatusAt = 0L
+
     fun uiState(): UiState {
         val raw = try { if (ptr != 0L) NativeBridge.nativeUiState(ptr) else "" } catch (e: Exception) { "" }
-        val ui = UiState.parse(raw)
+        var ui = UiState.parse(raw)
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (ui.status.isNotEmpty()) {
+            lastStatus = ui.status
+            lastStatusAt = now
+        } else if (lastStatus.isNotEmpty() && now - lastStatusAt < 2500) {
+            // Tool phrases get cleared the instant a tool completes, so a 300 ms
+            // gap between calls reads as plain thinking. A short sticky keeps the
+            // working/searching face lit while the agent is still mid-turn.
+            ui = ui.copy(status = lastStatus)
+        }
         lastUi = ui
         return ui
     }

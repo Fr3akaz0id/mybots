@@ -690,11 +690,21 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
                 and "timeout" in str(error).lower() and getattr(handle, "audible", False)):
             logger.info("[Gadget] finalisation-timeout: finishing stream instead of aborting (%s)", error)
             handle.aborted = True
-            handle.out.finish()
-            # The remaining clauses sit in the consumer's queue — snapshot them before
-            # the drain loop could eat one, then generate them behind the rescued stream.
-            remaining = []
+            # The core's fixed wait expired while one or more clauses were still being
+            # synthesized. Closing now would silently drop their audio the second it
+            # lands (the "fell off" reply). Let the consumer's drain task finish first;
+            # the stream stays open underneath, so late audio goes out paced as normal.
             consumer = getattr(handle, "_consumer", None)
+            t0 = time.monotonic()
+            while (consumer is not None and not getattr(consumer, "done", True)
+                    and time.monotonic() - t0 < 30.0):
+                await asyncio.sleep(0.2)
+            logger.info("[Gadget] finalisation-timeout: held stream open %.1fs (drain done=%s)",
+                        time.monotonic() - t0, bool(consumer is None or getattr(consumer, "done", True)))
+            handle.out.finish()
+            # Whatever the drain never reached sits in the consumer's queue — snapshot
+            # it before the tail path, then generate it behind the rescued stream.
+            remaining = []
             queue = getattr(consumer, "_queue", None)
             if queue is not None:
                 try:

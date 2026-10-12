@@ -340,8 +340,26 @@ class DeviceSession:
             prev = self._audio_out
         out = AudioOut(self, self._next_stream(), src_rate, channels, prev=prev)
         self._audio_out = out
-        await out.start(turn=turn)
+        if prev is not None:
+            # audio.start clears the device's playback buffer. Sending it the moment
+            # a chained stream opens cuts whatever the previous stream is still
+            # playing, even though frame release itself is chained. Start only after
+            # the predecessor has released its last frame.
+            asyncio.get_running_loop().create_task(self._chain_start(out, prev, turn))
+        else:
+            await out.start(turn=turn)
         return out
+
+    async def _chain_start(self, out: "AudioOut", prev: "AudioOut", turn: "str | None") -> None:
+        try:
+            await asyncio.wait_for(prev.done.wait(), 60.0)
+        except asyncio.TimeoutError:
+            log.warning("audio stream %d: chained start after prev stalled (60s)", out.stream)
+        if not out.closed and not out.aborted:
+            try:
+                await out.start(turn=turn)
+            except Exception as exc:
+                log.warning("chained audio.start failed for stream %d: %s", out.stream, exc)
 
     async def play_pcm(self, pcm: bytes, rate: int, *, turn: str | None = None) -> AudioOut:
         out = await self.open_audio(rate, turn=turn)
