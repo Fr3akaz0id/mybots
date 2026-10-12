@@ -21,19 +21,15 @@ enum class HeadState {
             if (e.micActive()) return LISTENING
             if (e.speakingNow()) return SPEAKING
             val ui = e.lastUi
+            val st = ui.status.lowercase()
+            // A live tool/status phrase is the strongest "doing stuff" signal we have —
+            // it outranks the screen heuristic, so a slow API call or web search shows
+            // working/searching even while the core itself has timed out to idle.
+            if (st.isNotEmpty()) return if ("search" in st) SEARCHING else WORKING
             return when {
-                ui.screen == "thinking" || ui.screen == "responding" -> {
-                    // "Thinking": agent is turning the request over. A live status
-                    // ("Sending...", tool phrases) means it is actively doing stuff.
-                    // "Responding" without audible frames = composing the reply,
-                    // audio being generated — same face, no silent idle.
-                    val st = ui.status.lowercase()
-                    when {
-                        st.isEmpty() -> THINKING
-                        "search" in st -> SEARCHING
-                        else -> WORKING
-                    }
-                }
+                ui.screen == "thinking" || ui.screen == "responding" ->
+                    // Composing the reply / generating audio without a status line.
+                    THINKING
                 else -> IDLE
             }
         }
