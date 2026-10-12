@@ -55,7 +55,8 @@ class MainActivity : AppCompatActivity() {
                 val cur = pager?.currentPage ?: 0
                 val eng = if (cur < engines.size) engines.getOrNull(cur) else null
                 val idleFor = System.currentTimeMillis() - lastActivity
-                val busy = (eng?.micActive() == true) || (eng?.speakingNow() == true) ||
+                val coreBusy = eng?.lastUi?.screen == "Thinking" || eng?.lastUi?.screen == "Responding"
+                val busy = (eng?.micActive() == true) || (eng?.speakingNow() == true) || coreBusy ||
                     promptDialogs.isNotEmpty() || System.currentTimeMillis() < happyUntil
                 if (System.currentTimeMillis() < happyUntil) {
                     head?.setState(HeadState.HAPPY)

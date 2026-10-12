@@ -2,15 +2,17 @@ package com.freaklair.hermesgadget
 
 // Maps one page's live signals onto a robot-head state (MyBots). The same
 // contract a later native-Kotlin renderer must satisfy — keep it signal-based,
-// no invented timers.
+// no invented timers. The core knows whether it waits for a reply or runs a
+// turn, so thinking/working come from its screen + status, not from clocks.
 enum class HeadState {
-    IDLE, THINKING, SEARCHING, LISTENING, SPEAKING, HAPPY, ERROR, SLEEPING;
+    IDLE, THINKING, WORKING, SEARCHING, LISTENING, SPEAKING, HAPPY, ERROR, SLEEPING;
 
     val js: String get() = name.lowercase()
 
     companion object {
-        // screenOn covers "app visible"; pager passes null engine on the
-        // settings page. Priority: sleep > connection > mic > audio > thinking.
+        // Priority: sleep > connection > mic > speaker > core. mic and speaker
+        // are the local truth (what the user can hear/see right now); the core
+        // screen decides what the head does while nothing plays.
         fun derive(engine: PageEngine?, screenOn: Boolean): HeadState {
             if (!screenOn) return SLEEPING
             val e = engine ?: return IDLE
@@ -18,13 +20,14 @@ enum class HeadState {
             if (!e.isRunning()) return SEARCHING
             if (e.micActive()) return LISTENING
             if (e.speakingNow()) return SPEAKING
-            val now = System.currentTimeMillis()
-            // user spoke, hub-side agent is chewing on it; a reply that already
-            // started (audioAt after touch-up) rules this out
-            val sinceUp = now - e.lastTouchUpAt
-            if (e.lastTouchUpAt > 0 && sinceUp < 15_000 && e.lastAudioAt() < e.lastTouchUpAt)
-                return THINKING
-            return IDLE
+            val ui = e.lastUi
+            return if (ui.screen == "Thinking" || ui.screen == "Responding") {
+                // "Thinking": agent is turning the request over. A live status
+                // ("Sending...", tool phrases) means it is actively doing stuff.
+                // "Responding" without audible frames = composing the reply,
+                // audio being generated — same face, no silent idle.
+                if (ui.status.isNotEmpty()) WORKING else THINKING
+            } else IDLE
         }
     }
 }

@@ -155,9 +155,15 @@ class PageEngine(private val context: Context, val profile: Profile) {
     /** Data snapshot of the core's UI model — screen, texts, pending prompt.
      *  The framebuffer stays invisible; everything the drawer and the prompt
      *  dialog need comes through here as JSON. */
+    /** Last parsed snapshot, refreshed by uiState() (the 300 ms poll). */
+    @Volatile var lastUi: UiState = UiState.parse("{}")
+        private set
+
     fun uiState(): UiState {
         val raw = try { if (ptr != 0L) NativeBridge.nativeUiState(ptr) else "" } catch (e: Exception) { "" }
-        return UiState.parse(raw)
+        val ui = UiState.parse(raw)
+        lastUi = ui
+        return ui
     }
 
     /** Answer a pending yes/no prompt; mirrors the firmware console commands
@@ -169,7 +175,7 @@ class PageEngine(private val context: Context, val profile: Profile) {
     data class UiState(val screen: String, val title: String, val headline: String,
                        val detail: String, val body: String, val hint: String,
                        val promptId: String, val promptTitle: String, val promptText: String,
-                       val user: String) {
+                       val user: String, val status: String = "") {
         val pendingPrompt get() = promptId.isNotEmpty()
         companion object {
             fun parse(raw: String): UiState = try {
@@ -177,7 +183,7 @@ class PageEngine(private val context: Context, val profile: Profile) {
                 UiState(o.optString("screen"), o.optString("title"), o.optString("headline"),
                         o.optString("detail"), o.optString("body"), o.optString("hint"),
                         o.optString("prompt_id"), o.optString("prompt_title"), o.optString("prompt_text"),
-                        o.optString("user"))
+                        o.optString("user"), o.optString("status"))
             } catch (e: Exception) {
                 UiState("", "", "", "", "", "", "", "", "", "")
             }
