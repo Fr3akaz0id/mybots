@@ -50,6 +50,13 @@ class ChatDrawer(context: Context) : FrameLayout(context) {
 
     // panel state: 0 closed .. 1 open, animated
     private var state = 0f
+    // frame accent = the profile's head color, so the sheet matches the bot
+    private var frameColor = 0
+    // strip height in PagerView is 34 dp; keep them in sync or the overlap returns.
+    // The handle floats just above the strip as a permanent tab; the panel docks
+    // above the handle, so nothing ever covers the bot names.
+    private val stripClear = dp(34f) + dp(10f)
+    private val panelClear = stripClear + dp(28f)
 
     init {
         setWillNotDraw(false)
@@ -68,10 +75,12 @@ class ChatDrawer(context: Context) : FrameLayout(context) {
         panel.background = GradientDrawable().apply {
             cornerRadii = floatArrayOf(rad, rad, rad, rad, 0f, 0f, 0f, 0f)
             setColor(Color.parseColor("#E6101014"))
+            setStroke(dp(1.5f).toInt(), Color.parseColor("#2A2A33"))
         }
         val panelLp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT)
         panelLp.gravity = Gravity.BOTTOM
+        panelLp.bottomMargin = panelClear.toInt()
         panel.layoutParams = panelLp
 
         title.setTextColor(Color.parseColor("#E8C34A"))
@@ -94,7 +103,10 @@ class ChatDrawer(context: Context) : FrameLayout(context) {
             private var downY = 0f
             override fun onDraw(c: Canvas) {
                 val w = width.toFloat(); val h = height.toFloat()
-                val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#4A4A55") }
+                val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = if (frameColor != 0) frameColor else Color.parseColor("#4A4A55")
+                    alpha = if (frameColor != 0) 255 else 200
+                }
                 c.drawRoundRect(w / 2 - dp(18f), h / 2 - dp(2.5f), w / 2 + dp(18f), h / 2 + dp(2.5f),
                         dp(2.5f), dp(2.5f), p)
                 if (state < 0.98f) {
@@ -121,6 +133,7 @@ class ChatDrawer(context: Context) : FrameLayout(context) {
         }
         handle.layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(38f).toInt()).apply {
             gravity = Gravity.BOTTOM
+            bottomMargin = (stripClear - dp(12f)).toInt()
         }
 
         addView(panel, panelLp)
@@ -135,7 +148,11 @@ class ChatDrawer(context: Context) : FrameLayout(context) {
         if (profile == null) { visibility = GONE; return }
         visibility = if (profile.showText) VISIBLE else GONE
         title.text = "Chat — " + profile.name
-        render()
+        frameColor = try { Color.parseColor(profile.color) } catch (e: Exception) { 0 }
+        (panel.background as? GradientDrawable)?.setStroke(
+            dp(1.5f).toInt(), if (frameColor != 0) frameColor else Color.parseColor("#2A2A33"))
+        title.setTextColor(if (frameColor != 0) frameColor else Color.parseColor("#E8C34A"))
+        render(); handle.invalidate()
     }
 
     var onOpen: (() -> Unit)? = null
@@ -232,8 +249,8 @@ class ChatDrawer(context: Context) : FrameLayout(context) {
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
-        val h = panel.height.toFloat()
+        val h = (panel.height + panelClear).toFloat()
         panel.translationY = h * (1f - state)
-        handle.translationY = -maxOf(0f, h - dp(38f)) * state
+        handle.translationY = 0f
     }
 }

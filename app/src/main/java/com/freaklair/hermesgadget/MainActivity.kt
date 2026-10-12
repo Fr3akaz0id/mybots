@@ -24,6 +24,11 @@ class MainActivity : AppCompatActivity() {
     private var pager: PagerView? = null
     private var engines = listOf<PageEngine>()
     private var drawer: ChatDrawer? = null
+    // idle-sleep: face goes to ZZZ and the backlight dims after this much
+    // inactivity — the screen is the battery hog, not our code.
+    private val idleMs = 120_000L
+    private var lastActivity = System.currentTimeMillis()
+    private var dimmed = false
     private val promptDialogs = HashMap<String, android.app.AlertDialog>()
     private class CoreFeed { var user = ""; var body = ""; var active = false }
     private val feeds = HashMap<String, CoreFeed>()
@@ -49,13 +54,19 @@ class MainActivity : AppCompatActivity() {
                 applyHeadConfig()
                 val cur = pager?.currentPage ?: 0
                 val eng = if (cur < engines.size) engines.getOrNull(cur) else null
+                val idleFor = System.currentTimeMillis() - lastActivity
+                val busy = (eng?.micActive() == true) || (eng?.speakingNow() == true) ||
+                    promptDialogs.isNotEmpty() || System.currentTimeMillis() < happyUntil
                 if (System.currentTimeMillis() < happyUntil) {
                     head?.setState(HeadState.HAPPY)
+                } else if (idleFor > idleMs && !busy) {
+                    head?.setState(HeadState.SLEEPING)
                 } else {
                     val pm = getSystemService(android.os.PowerManager::class.java)
                     val screenOn = resumed && (pm?.isInteractive ?: true)
                     head?.setState(HeadState.derive(eng, screenOn))
                 }
+                if (resumed) setDim(idleFor > idleMs && !busy)
                 maybePairBanner(eng)
                 feedAndPrompts()
             } catch (_: Exception) { }
@@ -166,6 +177,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         resumed = false
+        setDim(false) // never carry our dim into another app
         getSharedPreferences("gadget", MODE_PRIVATE).edit().putBoolean("alive", false).apply()
         super.onStop()
     }
@@ -173,6 +185,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         resumed = true
+        lastActivity = System.currentTimeMillis()
         ui.removeCallbacks(headPoll)
         ui.post(headPoll)
         pager?.poke()
@@ -201,7 +214,7 @@ class MainActivity : AppCompatActivity() {
         engines = profiles.all().map { pg -> PageEngine(this, pg).also { it.width = w; it.height = h } }
         val p = PagerView(this, engines)
         p.owner = object : PagerView.Owner {
-            override fun onPageChanged(index: Int) { head?.poke(); applyHeadConfig(force = true)
+            override fun onPageChanged(index: Int) { head?.poke(); pokeActivity(); applyHeadConfig(force = true)
                 drawer?.bind(engines.getOrNull(index)?.profile)
                 engines.getOrNull(index)?.textUnread = false }
             override fun onSettingsRequested() { openSettings() }
@@ -261,6 +274,21 @@ class MainActivity : AppCompatActivity() {
         hudRef?.invalidate()
     }
 
+    // Any touch is "usage": reset the idle clock, restore brightness.
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) pokeActivity()
+        return super.dispatchTouchEvent(ev)
+    }
+    private fun pokeActivity() { lastActivity = System.currentTimeMillis() }
+
+    private fun setDim(on: Boolean) {
+        if (dimmed == on) return
+        dimmed = on
+        val lp = window.attributes
+        lp.screenBrightness = if (on) 0.12f else -1f  // -1 = follow system setting
+        window.attributes = lp
+    }
+
     private fun openSettings() {
         settings.launch(Intent(this, SettingsActivity::class.java))
     }
@@ -300,8 +328,8 @@ class MainActivity : AppCompatActivity() {
                     .setCancelable(false)
                     .setTitle(t)
                     .setMessage(st.promptText)
-                    .setPositiveButton("Yes") { _, _ -> e.answerPrompt(true); promptDialogs.remove(e.id) }
-                    .setNegativeButton("No") { _, _ -> e.answerPrompt(false); promptDialogs.remove(e.id) }
+                    .setPositiveButton("Yes") { _, _ -> pokeActivity(); e.answerPrompt(true); promptDialogs.remove(e.id) }
+                    .setNegativeButton("No") { _, _ -> pokeActivity(); e.answerPrompt(false); promptDialogs.remove(e.id) }
                     .show()
                 pager?.setPage(engines.indexOf(e).coerceAtLeast(0))
             } else if (!st.pendingPrompt && dlg != null) {
@@ -343,6 +371,7 @@ class MainActivity : AppCompatActivity() {
         // MyBots: wake match -> hop + a short happy beat, then the poller
         // returns to the derived state.
         d.onMatch = {
+            lastActivity = System.currentTimeMillis()
             happyUntil = System.currentTimeMillis() + 1600L
             head?.poke()
             head?.setState(HeadState.HAPPY)
