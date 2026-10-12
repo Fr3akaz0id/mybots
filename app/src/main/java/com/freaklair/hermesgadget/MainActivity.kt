@@ -43,15 +43,16 @@ class MainActivity : AppCompatActivity() {
                     head?.setBox(minOf(w0, h0) * 0.55f)
                 }
                 applyHeadConfig()
+                val cur = pager?.currentPage ?: 0
+                val eng = if (cur < engines.size) engines.getOrNull(cur) else null
                 if (System.currentTimeMillis() < happyUntil) {
                     head?.setState(HeadState.HAPPY)
                 } else {
-                    val cur = pager?.currentPage ?: 0
-                    val eng = if (cur < engines.size) engines.getOrNull(cur) else null
                     val pm = getSystemService(android.os.PowerManager::class.java)
                     val screenOn = resumed && (pm?.isInteractive ?: true)
                     head?.setState(HeadState.derive(eng, screenOn))
                 }
+                maybePairBanner(eng)
             } catch (_: Exception) { }
             ui.postDelayed(this, 300)
         }
@@ -73,6 +74,38 @@ class MainActivity : AppCompatActivity() {
     // aren't clobbered by the 300ms poll.
     private var appliedCfg: Pair<String, String>? = null
     @Volatile private var previewHold = false
+
+    // The core keeps the hub's pairing code in its status json; with the head
+    // replacing the panel nobody would ever see it. Surface it in the HUD.
+    private var lastPairCheck = 0L
+    private var lastPairText: String? = null
+    private var lastPairCode = ""
+    private fun maybePairBanner(eng: PageEngine?) {
+        val now = System.currentTimeMillis()
+        if (now - lastPairCheck < 1500) return
+        lastPairCheck = now
+        var text: String? = null
+        try {
+            val j = org.json.JSONObject(eng?.status() ?: "{}")
+            if (j.optString("phase") == "online" && !j.optBoolean("paired", true)) {
+                val code = j.optString("pairing_code", "")
+                text = if (code.isNotEmpty()) "Pair code $code" else "Waiting for pairing approval…"
+                if (code.isNotEmpty() && code != lastPairCode) {
+                    lastPairCode = code
+                    // the full command, once per code — long, so not in the pill
+                    android.widget.Toast.makeText(this@MainActivity,
+                        "run: hermes pairing approve gadget $code",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            } else {
+                lastPairCode = ""
+            }
+        } catch (_: Exception) {}
+        if (text != lastPairText) {
+            lastPairText = text
+            hudRef?.setPairBanner(text)
+        }
+    }
     private fun applyHeadConfig(force: Boolean = false) {
         if (previewHold && !force) return
         val p = profiles.active() ?: return
@@ -179,6 +212,7 @@ class MainActivity : AppCompatActivity() {
         hud.onWake = { toggleWake() }
         hud.bandProvider = { null }  // head mode: controls to edge margin, no core band
         hud.wakeOn = prefWakeEnabled()
+        hud.pairText = lastPairText   // survive rebuilds while a code is pending
         hud.start()
         hudRef = hud
         r.addView(hud, FrameLayout.LayoutParams(

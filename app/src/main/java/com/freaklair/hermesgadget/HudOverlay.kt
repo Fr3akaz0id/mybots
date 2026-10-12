@@ -38,6 +38,15 @@ class HudOverlay(context: Context) : View(context) {
     private val teal = Color.parseColor("#38D488")  // firmware kGreen (rgb565 61,214,140)
     private val dim = Color.parseColor("#5A5A62")
     private val fg = Color.parseColor("#E8E8EC")
+    private val amber = Color.parseColor("#E6A23C")
+
+    // pairing banner: set while the core waits for hub approval, cleared when
+    // paired. The head replaced the core panel, so without this the code the
+    // hub needs is invisible on screen.
+    @Volatile var pairText: String? = null
+    fun setPairBanner(t: String?) {
+        if (pairText != t) { pairText = t; handler.post { invalidate() } }
+    }
 
     private val dip = resources.displayMetrics.density
     private val h = 34f * dip          // pill height
@@ -173,6 +182,25 @@ class HudOverlay(context: Context) : View(context) {
         val gw = paint.measureText("\u2699")
         canvas.drawText("\u2699", gearBox.centerX() - gw / 2f, baseY(gearBox, 17f * dip), paint)
         paint.textAlign = Paint.Align.LEFT
+
+        // ---- pairing banner: centered amber pill below the pills ----
+        pairText?.let { txt ->
+            paint.textSize = 14f * dip
+            val tw = paint.measureText(txt) + 2 * padX
+            val y0 = wakeBox.bottom + 8f * dip
+            val box = RectF((width - tw) / 2f, y0, (width + tw) / 2f, y0 + h)
+            paint.color = 0xF2302308.toInt()
+            canvas.drawRoundRect(box, pillR, pillR, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.4f * dip
+            paint.color = 0x99E6A23C.toInt()
+            canvas.drawRoundRect(box, pillR, pillR, paint)
+            paint.style = Paint.Style.FILL
+            paint.strokeWidth = 1f
+            paint.color = amber
+            canvas.drawText(txt, box.centerX() - (tw - 2 * padX) / 2f, baseY(box, 14f * dip), paint)
+            paint.textSize = 14f * dip
+        }
     }
 
     // text baseline so the glyph block sits vertically centered inside `box`
