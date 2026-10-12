@@ -70,6 +70,30 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_save).setOnClickListener { onSave() }
         findViewById<Button>(R.id.btn_delete).setOnClickListener { onDelete() }
         findViewById<Button>(R.id.btn_save).text = "Save"
+
+        // phone's public label — pairing identity, global (not per profile)
+        deviceRow = findViewById(R.id.row_device)
+        refreshDeviceRow()
+        deviceRow?.setOnClickListener {
+            val ed = android.widget.EditText(this)
+            ed.setText(PageEngine.deviceName(this))
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Phone name")
+                .setMessage("How every agent sees this phone on pairing.")
+                .setView(ed)
+                .setPositiveButton("Save") { _, _ ->
+                    getSharedPreferences("gadget", MODE_PRIVATE).edit()
+                        .putString("device_name", ed.text.toString().trim()).apply()
+                    refreshDeviceRow()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    private var deviceRow: android.widget.TextView? = null
+    private fun refreshDeviceRow() {
+        deviceRow?.text = "Phone: " + PageEngine.deviceName(this) + "  (tap to change)"
     }
 
     // back: editor closes to cards first, app sheet closes second

@@ -115,11 +115,15 @@ class PageEngine(private val context: Context, val profile: Profile) {
         s.replace(Regex("[^\\x20-\\x7E]"), "-").trim().ifEmpty { "Android Gadget" }
 
     private fun createCore() {
+        // Announce ourselves as `MyBots <phone> (<page>)`: one app, one per
+        // phone, the page says which persona face this phone brought. Pairing
+        // approvals then read as a device act, never "a bot paired itself".
+        val label = helloLabel(context, name)
         // Pre-seed NVS: core reads setting("name", default), and an old cached
         // non-ASCII value would win over our default otherwise.
-        storage.set("name", coreName(name))
+        storage.set("name", coreName(label))
         ptr = NativeBridge.nativeCreateOn(host, profile.url, profile.token, width, height,
-            1, 1, 16000L, 16000L, coreName(name))
+            1, 1, 16000L, 16000L, coreName(label))
         if (ptr != 0L) NativeBridge.nativeNetwork(ptr, if (netUp()) 1 else 0)
     }
 
@@ -153,4 +157,21 @@ class PageEngine(private val context: Context, val profile: Profile) {
 
     fun rows(y0: Int, y1: Int): Array<IntArray> =
         if (ptr == 0L) emptyArray() else NativeBridge.nativeRows(ptr, y0, y1)
+
+    companion object {
+        /** This phone's public name: user override, else the system device
+         *  name, else the model. Tap "Phone name" in Settings to change. */
+        fun deviceName(context: android.content.Context): String {
+            val pref = context.getSharedPreferences("gadget", android.content.Context.MODE_PRIVATE)
+                .getString("device_name", "")
+            if (!pref.isNullOrBlank()) return pref.trim()
+            val sys = android.provider.Settings.Global.getString(context.contentResolver, "device_name")
+            if (!sys.isNullOrBlank()) return sys.trim()
+            return android.os.Build.MODEL
+        }
+
+        /** The hello string hubs register: `MyBots <phone> (<page>)`. */
+        fun helloLabel(context: android.content.Context, pageName: String): String =
+            "MyBots ${deviceName(context)} ($pageName)"
+    }
 }

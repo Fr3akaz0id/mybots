@@ -58,6 +58,17 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="+ New profile" />
+
+            <!-- this phone's public name — what every hub sees on pairing -->
+            <TextView
+                android:id="@+id/row_device"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:paddingVertical="4dp"
+                android:text="Phone name: —"
+                android:textColor="#8A8A93"
+                android:textSize="13sp" />
         </LinearLayout>
     </ScrollView>
 
