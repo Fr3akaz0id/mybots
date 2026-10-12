@@ -32,6 +32,40 @@ object MicBus {
 
     private fun needed(): Boolean = coreTaps.isNotEmpty() || wakeTap != null
 
+    // Test hook: synthetic PCM (16k mono s16) fed through the same fan-out at
+    // real-time pacing while the physical mic is muted for taps. Wake taps and
+    // core taps both see it, so KWS, core VAD and hold-monitoring all behave
+    // exactly as with a real mic. One playback at a time.
+    @Volatile private var injecting = false
+    private var playThread: Thread? = null
+
+    fun inject(samples: ShortArray, sr: Int = 16000, onDone: (() -> Unit)? = null) {
+        synchronized(lock) {
+            if (playThread?.isAlive == true) return
+            injecting = true
+            startRate(sr)
+            ensure()
+            playThread = Thread {
+                var off = 0
+                val frame = sr / 50 // 20 ms
+                while (off < samples.size && injecting) {
+                    val t0 = System.nanoTime()
+                    val n = minOf(frame, samples.size - off)
+                    val piece = samples.copyOfRange(off, off + n)
+                    wakeTap?.invoke(piece)
+                    for (t in coreTaps) t(piece)
+                    off += n
+                    val ms = 20L - (System.nanoTime() - t0) / 1_000_000L
+                    if (ms > 0) try { Thread.sleep(ms) } catch (_: InterruptedException) { break }
+                }
+                injecting = false
+                onDone?.invoke()
+            }.also { it.isDaemon = true; it.start() }
+        }
+    }
+
+    fun stopInject() { injecting = false }
+
     private fun ensure() {
         synchronized(lock) {
             if (record != null || !needed()) return
@@ -54,7 +88,7 @@ object MicBus {
                 val buf = ShortArray(chunk)
                 while (record === rec && rec.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                     val n = rec.read(buf, 0, chunk)
-                    if (n > 0) {
+                    if (n > 0 && !injecting) {
                         val piece = buf.copyOf(n)
                         wakeTap?.invoke(piece)
                         for (t in coreTaps) t(piece)

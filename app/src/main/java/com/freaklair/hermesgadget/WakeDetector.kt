@@ -141,6 +141,61 @@ class WakeDetector(private val context: Context) {
     // is decided by an energy VAD inside the audio stream (pause = finished),
     // not a blind timer — long sentences never get cut off. Hard cap still
     // exists so a stuck mic can't hold the button forever.
+    // Test hook: hold the Talk button on an engine while synthetic PCM is fed
+    // through MicBus — same states, VAD and release path as a real wake fire,
+    // minus the KWS decode. Release comes from the energy VAD in monitorHold
+    // (needs the wake tap alive) or from the MAX_HOLD cap as fallback.
+    fun injectHold(samples: ShortArray, e: PageEngine, attempt: Int = 1) {
+        if (e.ptr == 0L || holding) return
+        Log.i("hginject", "hold start: foreground=" + e.foreground +
+                " mic=" + e.micActive() + " status=" + e.status() +
+                (if (attempt > 1) " retry=$attempt" else ""))
+        val now = System.currentTimeMillis()
+        holding = true
+        holdStartAt = now
+        minHoldAt = now + MIN_HOLD_MS
+        lastVoiceAt = now
+        heardVoice = false
+        val extra = pressTalk(e)
+        main.removeCallbacks(holdCapRelease)
+        main.postDelayed(holdCapRelease, MAX_HOLD_MS)
+        // Wait for the core to open its mic tap. When a press was swallowed or
+        // the mic HAL is not ready yet (cold start), close cleanly and retry
+        // the whole hold after a pause — the HAL always opens by try 3.
+        main.postDelayed({
+            val feed = Runnable {
+                Thread {
+                    val lead = ShortArray(16000 / 50 * 12) // ~240 ms lead-in
+                    com.freaklair.hermesgadget.drivers.MicBus.inject(lead + samples, 16000)
+                }.also { it.isDaemon = true; it.start() }
+            }
+            if (e.micActive()) { feed.run(); return@postDelayed }
+            if (attempt < 3) {
+                Log.i("hginject", "mic silent after press — full retry $attempt")
+                endHold(e)
+                main.postDelayed({ injectHold(samples, e, attempt + 1) }, 1200)
+            } else {
+                Log.w("hginject", "mic never opened — utterance lost")
+            }
+        }, 150 + extra + 700)
+    }
+
+    // Press the talk button so the core starts a hold session. When the panel
+    // is asleep, the core consumes the first press as a wake-only press —
+    // emulate the human: wake press, release, then the real hold. Returns the
+    // extra ms the caller must wait before feeding audio (mic opens ~350 ms
+    // after the second press).
+    private fun pressTalk(e: PageEngine): Long {
+        val sleeping = try {
+            org.json.JSONObject(e.status()).optBoolean("display_sleeping", false)
+        } catch (_: Exception) { false }
+        e.post { if (e.ptr != 0L) NativeBridge.nativeButton(e.ptr, BTN_TALK, 1) }
+        if (!sleeping) return 0L
+        main.postDelayed({ e.post { if (e.ptr != 0L) NativeBridge.nativeButton(e.ptr, BTN_TALK, 0) } }, 150)
+        main.postDelayed({ e.post { if (e.ptr != 0L) NativeBridge.nativeButton(e.ptr, BTN_TALK, 1) } }, 600)
+        return 750L
+    }
+
     private fun fire(e: PageEngine) {
         Log.i(TAG, "wake -> ${e.name}")
         try { onMatch?.invoke() } catch (_: Exception) { }
@@ -150,7 +205,7 @@ class WakeDetector(private val context: Context) {
         minHoldAt = now + MIN_HOLD_MS
         lastVoiceAt = now
         heardVoice = false
-        e.post { if (e.ptr != 0L) NativeBridge.nativeButton(e.ptr, BTN_TALK, 1) }
+        pressTalk(e)
         main.removeCallbacks(holdCapRelease)
         main.postDelayed(holdCapRelease, MAX_HOLD_MS)
     }

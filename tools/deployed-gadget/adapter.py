@@ -91,6 +91,26 @@ def _flag(value: Any, default: bool) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+# Narration: a voice-first bot never works in silence. The echo speaks what the
+# device just said, and long tool phases narrate themselves. Both are color, not
+# a backlog: narration never queues behind other audio (see _narrate).
+NARRATION_MAX_PER_TURN = 5
+NARRATION_ECHO_MAX_CHARS = 90
+
+
+def _narration_phrase(raw: str) -> str:
+    """Device status like 'is running find /root ( -iname \"*l…' -> 'Running find /root'."""
+    p = " ".join(raw.strip().split())
+    p = re.sub(r"[*_`]", "", p)
+    m = re.match(r"^is\s+(.+)$", p, flags=re.I)
+    if m:
+        p = m.group(1)
+    p = re.split(r"\s*[\(\[]", p, maxsplit=1)[0].rstrip(" .…")
+    if len(p) > 70:
+        p = p[:70].rstrip() + "…"
+    return (p[:1].upper() + p[1:]) if p else ""
+
+
 # Plugin hook: the base consumer reaches our abort() exactly once — wrap it so the
 # handle keeps a back-reference to the consumer whose queue holds the unspoken text.
 # Reading, never editing: the base module is untouched.
@@ -185,6 +205,8 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._heartbeat_s = int(extra.get("heartbeat_s") or 20)
         self._max_utterance_s = float(extra.get("max_utterance_s") or 60)
         self._speak_replies = _flag(extra.get("speak_replies"), True)
+        self._narration = _flag(extra.get("narration"), True)      # speak while working
+        self._narrate_echo = _flag(extra.get("narrate_echo"), True)  # speak the transcript back first
         self._auto_home = _flag(extra.get("auto_home"), True)
         self._battery_log_on = _flag(extra.get("battery_log"), False)
         self._battery_log: Optional[BatteryLog] = None
@@ -195,6 +217,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._store: Optional[DeviceStore] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._turns: Dict[str, str] = {}
+        self._narr_state: Dict[str, Dict[str, Any]] = {}  # device id -> per-turn narration state
         self._watch_task: Optional[asyncio.Task] = None
         self._update_task: Optional[asyncio.Task] = None
         self._installing: Dict[str, asyncio.Task] = {}  # device id -> staged update being installed
@@ -421,8 +444,23 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
     async def on_utterance(self, session: DeviceSession, msg_id: str, wav: bytes, seconds: float) -> None:
         path = await cache_audio_from_bytes_async(wav, ".wav")
         logger.debug("[%s] %.1fs utterance from %s -> %s", self.name, seconds, session.device_id, path)
+        if self._narration and self._narrate_echo and session.has_speaker and seconds >= 0.8:
+            # Say what we heard before the agent starts thinking — the gap from mic release to
+            # first action is currently the loudest moment in a voice conversation.
+            session.spawn(self._echo_transcript(session, path))
         await self.handle_message(self._event(
             session, msg_id, "", message_type=MessageType.VOICE, media_urls=[path], media_types=["audio/wav"]))
+
+    async def _echo_transcript(self, session: DeviceSession, path: str) -> None:
+        try:
+            from tools.transcription_tools import transcribe_audio
+            res = await asyncio.to_thread(transcribe_audio, path)
+            text = (res.get("text") if isinstance(res, dict) else "") or ""
+            text = " ".join(str(text).split()).strip()
+            if len(text) >= 3:
+                await self._narrate(session, text[:NARRATION_ECHO_MAX_CHARS])
+        except Exception as exc:  # a missing/failed STT must never delay the message itself
+            logger.debug("[%s] echo skipped: %s", self.name, exc)
 
     async def on_cancel(self, session: DeviceSession) -> None:
         await self.handle_message(self._event(session, "cancel", "/stop", message_type=MessageType.TEXT))
@@ -461,6 +499,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             return
         turn = event.message_id or uuid.uuid4().hex[:12]
         self._turns[session.device_id] = turn
+        self._narr_state[session.device_id] = {"count": 0, "last": "", "reply_started": False}
         await session.turn_start(turn)
 
     async def on_processing_complete(self, event: MessageEvent, outcome) -> None:
@@ -468,6 +507,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         if session is None or not session.paired:
             return
         turn = self._turns.pop(session.device_id, None) or event.message_id or ""
+        self._narr_state.pop(session.device_id, None)
         await session.turn_end(turn, getattr(outcome, "value", str(outcome)))
 
     def set_status_text(self, chat_id: str, text: Optional[str]) -> None:
@@ -484,8 +524,84 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             session.spawn(coro)
         else:
             asyncio.run_coroutine_threadsafe(coro, self._loop)
+        if text and self._narration and self._loop is not None:
+            self._maybe_narrate_status(session, text)
+
+    # -- narration: spoken color while the agent works --------------------------------
+
+    def _maybe_narrate_status(self, session: DeviceSession, text: str) -> None:
+        loop = self._loop
+        if loop is None:
+            return
+        state = self._narr_state.get(session.device_id)
+        if state is None or state.get("reply_started") or not session.paired or not session.has_speaker:
+            return
+        if state.get("count", 0) >= NARRATION_MAX_PER_TURN:
+            return
+        phrase = _narration_phrase(text)
+        if not phrase or phrase == state.get("last"):
+            return
+        state["count"] = state.get("count", 0) + 1
+        state["last"] = phrase
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            session.spawn(self._narrate(session, phrase))
+        else:
+            asyncio.run_coroutine_threadsafe(self._narrate(session, phrase), loop)
+
+    async def _narrate(self, session: DeviceSession, text: str) -> None:
+        """Speak one short line with the profile's own TTS. Never queues: if the device is
+        already playing anything (reply audio, a previous line), this is text-only — the
+        answer itself is the narration from here on."""
+        if not session.paired or not session.has_speaker:
+            return
+        if session._audio_out is not None and not session._audio_out.done.is_set():
+            return
+        try:
+            from tools.tts_tool import _load_tts_config
+            from tools.tts_streaming import resolve_streaming_provider
+            streamer = resolve_streaming_provider(_load_tts_config())
+            if streamer is None:
+                return
+            gen = streamer.stream(text)
+            sentinel = object()
+            # stream() opens the synthesis request; fetching blocks (up to ~1 s for the first
+            # chunk) — the generator runs in a worker thread, while writes stay on the loop
+            # thread, because AudioOut.write touches an asyncio.Queue.
+            first = await asyncio.to_thread(next, gen, sentinel)
+            if first is sentinel or not first:
+                return
+            # The provider settles its rate on the first chunk; open the stream now.
+            out = await session.open_audio(streamer.sample_rate, 1,
+                                           turn=self._turns.get(session.device_id))
+            written = False
+            try:
+                if not out.aborted and isinstance(first, bytes):
+                    out.write(first)
+                    written = True
+                while not out.aborted:
+                    chunk = await asyncio.to_thread(next, gen, sentinel)
+                    if chunk is sentinel:
+                        break
+                    if isinstance(chunk, bytes) and chunk:
+                        out.write(chunk)
+                        written = True
+            finally:
+                if written and not out.aborted:
+                    out.finish()
+                    logger.info("[Gadget] narrated %s: %s", session.device_id, text[:90])
+        except Exception as exc:  # narration is decoration; the turn must survive it
+            logger.debug("[%s] narration skipped: %s", self.name, exc)
 
     # -- outbound text ----------------------------------------------------------------
+
+    def _mark_reply_started(self, session: DeviceSession) -> None:
+        state = self._narr_state.get(session.device_id)
+        if state is not None:
+            state["reply_started"] = True
 
     async def send(self, chat_id: str, content: str, reply_to: Optional[str] = None,
                    metadata: Optional[Dict[str, Any]] = None) -> SendResult:
@@ -502,6 +618,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
         text = textfmt.for_device(content, session.charset)
         if text:
+            self._mark_reply_started(session)
             interim = bool((metadata or {}).get("_interim_send"))
             await session.send_reply(text, turn=self._turns.get(session.device_id), interim=interim)
         return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
@@ -514,6 +631,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         session = self._session(chat_id)
         if session is None or not session.paired:
             return SendResult(success=False, error="gadget not connected")
+        self._mark_reply_started(session)
         await session.send_delta(textfmt.for_device(content, session.charset), turn=self._turns.get(session.device_id))
         return SendResult(success=True)
 
@@ -654,6 +772,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             logger.warning("[%s] cannot play %s: %s", self.name, path, exc)
             return SendResult(success=False, error=str(exc))
         await session.play_pcm(pcm, session.speaker_rate, turn=self._turns.get(session.device_id))
+        self._mark_reply_started(session)
         return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
 
     async def play_tts(self, chat_id: str, audio_path: str, **kwargs) -> SendResult:

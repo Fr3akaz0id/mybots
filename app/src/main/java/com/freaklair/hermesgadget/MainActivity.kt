@@ -154,6 +154,47 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val injectRecv = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: android.content.Intent?) {
+            // debug builds only — mirrors what a real hold-to-talk capture does
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+            val path = i?.getStringExtra("path") ?: return
+            val e = engines.getOrNull((pager?.currentPage ?: 0).coerceIn(0, engines.size - 1)) ?: return
+            val pcm = try { readWav16k(path) } catch (t: Throwable) { null }
+            if (pcm == null || pcm.size < 1600) { android.util.Log.w("hginject", "no pcm in $path"); return }
+            if (!e.foreground) { android.util.Log.w("hginject", "engine '${e.name}' not foreground"); return }
+            android.util.Log.i("hginject", "hold+inject ${pcm.size / 16000.0}s -> ${e.name}")
+            wake.value.target = e
+            wake.value.injectHold(pcm, e)
+        }
+    }
+
+    private fun readWav16k(path: String): ShortArray? {
+        val bytes = java.io.File(path).readBytes()
+        if (bytes.size >= 44 && String(bytes, 0, 4) == "RIFF" && String(bytes, 8, 4) == "WAVE") {
+            val sr = java.nio.ByteBuffer.wrap(bytes, 24, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+            if (sr != 16000) return null // tests speak 16k; refuse to silently resample
+            var off = 12
+            while (off + 8 <= bytes.size) {
+                val id = String(bytes, off, 4)
+                val sz = java.nio.ByteBuffer.wrap(bytes, off + 4, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+                if (id == "data") {
+                    val start = off + 8
+                    val n = minOf(sz, bytes.size - start) / 2
+                    val s = ShortArray(n)
+                    java.nio.ByteBuffer.wrap(bytes, start, n * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(s)
+                    return s
+                }
+                off += 8 + sz + (sz % 2)
+            }
+            return null
+        }
+        val n = bytes.size / 2
+        val s = ShortArray(n)
+        java.nio.ByteBuffer.wrap(bytes, 0, n * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(s)
+        return s
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         profiles = ProfileStore(this)
@@ -166,6 +207,9 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.registerReceiver(this, headPreview,
             android.content.IntentFilter("com.freaklair.mybots.HEAD_PREVIEW"),
             ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(this, injectRecv,
+            android.content.IntentFilter("com.freaklair.mybots.INJECT"),
+            ContextCompat.RECEIVER_EXPORTED)
 
         rebuild()  // builds engines + pager, starts them if the mic is granted
 
@@ -179,6 +223,7 @@ class MainActivity : AppCompatActivity() {
         hudRef?.stop()
         ui.removeCallbacks(headPoll)
         try { unregisterReceiver(headPreview) } catch (_: Exception) { }
+        try { unregisterReceiver(injectRecv) } catch (_: Exception) { }
         if (wake.isInitialized()) wake.value.shutdown()
         engines.forEach { it.stop() }
         super.onDestroy()
