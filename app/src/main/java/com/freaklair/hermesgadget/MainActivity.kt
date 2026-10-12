@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
                 val cur = pager?.currentPage ?: 0
                 val eng = if (cur < engines.size) engines.getOrNull(cur) else null
                 val idleFor = System.currentTimeMillis() - lastActivity
-                val coreBusy = eng?.lastUi?.screen == "Thinking" || eng?.lastUi?.screen == "Responding"
+                val coreBusy = eng?.lastUi?.screen in setOf("thinking", "responding")
                 val busy = (eng?.micActive() == true) || (eng?.speakingNow() == true) || coreBusy ||
                     promptDialogs.isNotEmpty() || System.currentTimeMillis() < happyUntil
                 if (System.currentTimeMillis() < happyUntil) {
@@ -341,7 +341,7 @@ class MainActivity : AppCompatActivity() {
             val f = feeds.getOrPut(e.id) { CoreFeed() }
             if (st.user.isEmpty()) f.user = ""
             else if (st.user != f.user) { f.user = st.user; f.body = ""; f.active = false; dr.turnUser(e.id, st.user) }
-            val streaming = st.screen == "Responding" || st.screen == "Thinking"
+            val streaming = st.screen == "responding" || st.screen == "thinking"
             if (st.body.isNotEmpty() && st.body != f.body && !st.body.startsWith("\"")) {
                 if (!f.active) { dr.turnUser(e.id, ""); f.active = true }
                 f.body = st.body

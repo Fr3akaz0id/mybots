@@ -718,13 +718,13 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             except Exception:
                 def strip(t):
                     return t
-            text = " ".join(part for part in (strip(c).strip() for c in clauses) if part)
+            cleaned = [part for part in (strip(c).strip() for c in clauses) if part]
             streamer = getattr(consumer, "_streamer", None)
             if streamer is None:
                 from tools.tts_tool import _load_tts_config
                 from tools.tts_streaming import resolve_streaming_provider
                 streamer = resolve_streaming_provider(_load_tts_config())
-            if not text or streamer is None:
+            if not cleaned or streamer is None:
                 return
             session = self._session(handle.chat_id)
             if session is None:
@@ -735,16 +735,19 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             written = 0
 
             def pump():
+                # Per clause, exactly like the consumer's own loop: a long tail must not
+                # wait for whole-text synthesis — the first chunk lands after ~1 s.
                 nonlocal written
-                for chunk in streamer.stream(text):
-                    if chunk:
-                        out.write(chunk)
-                        written += len(chunk)
+                for clause in cleaned:
+                    for chunk in streamer.stream(clause):
+                        if chunk:
+                            out.write(chunk)
+                            written += len(chunk)
 
             await asyncio.to_thread(pump)
             out.finish()
             logger.info("[Gadget] finalisation tail: continued %d clauses (%d chars) behind the rescued stream",
-                        len(clauses), len(text))
+                        len(clauses), sum(len(c) for c in cleaned))
         except Exception as exc:
             logger.info("[Gadget] finalisation tail skipped: %s", exc)
 
