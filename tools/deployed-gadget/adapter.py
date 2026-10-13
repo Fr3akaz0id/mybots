@@ -56,7 +56,8 @@ from .battery_log import BatteryLog
 from .hub import DeviceHub, DeviceSession, HubDelegate
 from .store import DeviceStore
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("hermes_gadget.adapter")
+logger.info("[Gadget] adapter module loaded (narration build) from %s", __file__)
 
 PLATFORM_NAME = "gadget"
 MAX_MESSAGE_LENGTH = 4000
@@ -154,6 +155,26 @@ class GadgetTTSHandle(StreamingTTSHandle):
     rescued: bool = False   # finalisation-timeout watchdog owns this stream
 
 
+async def _gadget_drain_watchdog(handle, consumer, cap):
+    """One-shot closer for a rescued stream whose drain wedges (provider hang), so the
+    audio stream cannot stay open forever after the natural-finish handoff."""
+    t0 = time.monotonic()
+    task = getattr(consumer, "_task", None)
+    while (not getattr(consumer, "_completed", False)
+           and (task is None or not task.done())
+           and time.monotonic() - t0 < cap):
+        await asyncio.sleep(5.0)
+    if getattr(consumer, "_completed", False):
+        return
+    logger.info("[Gadget] drain-watchdog: closing stream after %.0fs (drain incomplete)",
+                time.monotonic() - t0)
+    try:
+        if not handle.out.closed:
+            handle.out.finish()
+    except Exception:
+        pass
+
+
 @dataclass
 class _Prompt:
     """A question shown on a device, and how to hand its answer back to Hermes."""
@@ -218,6 +239,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._turns: Dict[str, str] = {}
         self._narr_state: Dict[str, Dict[str, Any]] = {}  # device id -> per-turn narration state
+        self._narr_streams: Dict[str, set] = {}  # device id -> stream ids opened by narration
         self._watch_task: Optional[asyncio.Task] = None
         self._update_task: Optional[asyncio.Task] = None
         self._installing: Dict[str, asyncio.Task] = {}  # device id -> staged update being installed
@@ -455,12 +477,18 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         try:
             from tools.transcription_tools import transcribe_audio
             res = await asyncio.to_thread(transcribe_audio, path)
-            text = (res.get("text") if isinstance(res, dict) else "") or ""
+            text = ""
+            if isinstance(res, dict):
+                text = str(res.get("text") or res.get("transcript") or "")
             text = " ".join(str(text).split()).strip()
             if len(text) >= 3:
+                logger.info("[%s] echo heard %r — speaking it back", self.name, text[:90])
                 await self._narrate(session, text[:NARRATION_ECHO_MAX_CHARS])
+            else:
+                logger.warning("[%s] echo skipped: empty transcript from %s (%s)",
+                               self.name, path, res if isinstance(res, dict) else "")
         except Exception as exc:  # a missing/failed STT must never delay the message itself
-            logger.debug("[%s] echo skipped: %s", self.name, exc)
+            logger.warning("[%s] echo skipped: %s", self.name, exc)
 
     async def on_cancel(self, session: DeviceSession) -> None:
         await self.handle_message(self._event(session, "cancel", "/stop", message_type=MessageType.TEXT))
@@ -508,12 +536,31 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             return
         turn = self._turns.pop(session.device_id, None) or event.message_id or ""
         self._narr_state.pop(session.device_id, None)
+        # If device audio is still live or queued (the reply's TTS is being
+        # generated behind this turn), don't end it early — turn.end landing
+        # mid-pipeline settles the core to IDLE for a moment before the audio
+        # arrives. Wait for the pump to drain, capped, then end.
+        pump = getattr(session, "_audio_out", None)
+        if pump is not None and not pump.done.is_set():
+            import time as _time
+            t0 = _time.monotonic()
+            while _time.monotonic() - t0 < 90 and not pump.done.is_set():
+                await asyncio.sleep(0.25)
         await session.turn_end(turn, getattr(outcome, "value", str(outcome)))
+        # Deferred mid-turn clears end here: guarantee the device goes quiet.
+        await session.send_status("")
 
     def set_status_text(self, chat_id: str, text: Optional[str]) -> None:
         super().set_status_text(chat_id, text)
         session = self._session(chat_id)
         if session is None or self._loop is None:
+            return
+        # A tool-complete clear mid-turn would blank the working face seconds
+        # before the next phrase lands — the device face should read WORKING
+        # for the whole turn, not blink. Keep the last phrase; the real reply
+        # (audio start / final reply text / turn start) clears it on-device.
+        if not text and self._turns.get(session.device_id):
+            logger.debug("[Gadget] status clear deferred (turn live): %s", session.device_id)
             return
         coro = session.send_status(text or "")
         try:
@@ -532,17 +579,26 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
     def _maybe_narrate_status(self, session: DeviceSession, text: str) -> None:
         loop = self._loop
         if loop is None:
+            logger.info("[Gadget] narrate-skip: loop not started yet")
             return
         state = self._narr_state.get(session.device_id)
-        if state is None or state.get("reply_started") or not session.paired or not session.has_speaker:
+        if state is None:
+            logger.info("[Gadget] narrate-skip status %r: no turn state", text[:40])
+            return
+        if state.get("reply_started") or not session.paired or not session.has_speaker:
+            logger.info("[Gadget] narrate-skip status %r: reply_started=%s paired=%s speaker=%s",
+                        text[:40], state.get("reply_started"), session.paired, session.has_speaker)
             return
         if state.get("count", 0) >= NARRATION_MAX_PER_TURN:
+            logger.info("[Gadget] narrate budget exhausted for %s", session.device_id)
             return
         phrase = _narration_phrase(text)
         if not phrase or phrase == state.get("last"):
+            logger.info("[Gadget] narrate-skip status %r: phrase=%r last=%r", text[:40], phrase, state.get("last"))
             return
         state["count"] = state.get("count", 0) + 1
         state["last"] = phrase
+        logger.info("[Gadget] narrating status #%d: %r", state["count"], phrase[:80])
         try:
             running = asyncio.get_running_loop()
         except RuntimeError:
@@ -552,6 +608,14 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         else:
             asyncio.run_coroutine_threadsafe(self._narrate(session, phrase), loop)
 
+    def _narration_live(self, session: DeviceSession) -> bool:
+        """True when the currently live stream is one of OUR narration lines — chaining
+        narration behind narration is good; chaining behind a reply is not."""
+        out = session._audio_out
+        return (out is not None and not out.done.is_set()
+                and session.device_id in self._narr_streams
+                and out.stream in self._narr_streams[session.device_id])
+
     async def _narrate(self, session: DeviceSession, text: str) -> None:
         """Speak one short line with the profile's own TTS. Never queues: if the device is
         already playing anything (reply audio, a previous line), this is text-only — the
@@ -559,6 +623,8 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         if not session.paired or not session.has_speaker:
             return
         if session._audio_out is not None and not session._audio_out.done.is_set():
+            logger.info("[Gadget] narration dropped (audio already live on %s): %r",
+                        session.device_id, text[:60])
             return
         try:
             from tools.tts_tool import _load_tts_config
@@ -575,8 +641,17 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             if first is sentinel or not first:
                 return
             # The provider settles its rate on the first chunk; open the stream now.
+            # Re-check liveness: the ~5 s synthesis wait overlapped the world, and if the
+            # real reply started meanwhile this line would chain behind it — wrong order.
+            state = self._narr_state.get(session.device_id)
+            if (state is not None and state.get("reply_started")) or \
+               (session._audio_out is not None and not session._audio_out.done.is_set()
+                and not self._narration_live(session)):
+                logger.info("[Gadget] narration dropped (replied or mid-reply audio): %r", text[:60])
+                return
             out = await session.open_audio(streamer.sample_rate, 1,
                                            turn=self._turns.get(session.device_id))
+            self._narr_streams.setdefault(session.device_id, set()).add(out.stream)
             written = False
             try:
                 if not out.aborted and isinstance(first, bytes):
@@ -592,9 +667,10 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             finally:
                 if written and not out.aborted:
                     out.finish()
-                    logger.info("[Gadget] narrated %s: %s", session.device_id, text[:90])
+                    logger.info("[Gadget] narrated %s stream=%d: %s", session.device_id,
+                                out.stream, text[:90])
         except Exception as exc:  # narration is decoration; the turn must survive it
-            logger.debug("[%s] narration skipped: %s", self.name, exc)
+            logger.warning("[%s] narration skipped: %s", self.name, exc)
 
     # -- outbound text ----------------------------------------------------------------
 
@@ -618,8 +694,11 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
         text = textfmt.for_device(content, session.charset)
         if text:
-            self._mark_reply_started(session)
+            # An interim send is tool-progress draft text, not the answer —
+            # it must NOT silence later narration.
             interim = bool((metadata or {}).get("_interim_send"))
+            if not interim:
+                self._mark_reply_started(session)
             await session.send_reply(text, turn=self._turns.get(session.device_id), interim=interim)
         return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
 
@@ -647,6 +726,10 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
                 await session.send_notice(text, ttl_s=15)
             return SendResult(success=True, message_id=message_id)
         turn = self._turns.get(session.device_id)
+        if not text:
+            # Nothing to show: an empty draft frame must not read as a reply
+            # (the core would clear the working-state phrase on arrival).
+            return SendResult(success=True, message_id=message_id)
         if finalize:
             await session.send_reply(text, turn=turn)
         else:
@@ -834,6 +917,21 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
                     and time.monotonic() - t0 < 45.0):
                 await asyncio.sleep(0.2)
             clean_end = bool(consumer is None or getattr(consumer, "_completed", False))
+            _task = getattr(consumer, "_task", None)
+            if not clean_end and _task is not None and not _task.done():
+                # Long answer: the drain task is still alive and the queue is intact —
+                # closing here would split the answer across two streams, which is the
+                # "answer fell off" bug. Let the drain finish naturally; its own
+                # finish_streaming_tts closes the stream with a paced audio.end. The
+                # watchdog below guards a wedged provider instead.
+                logger.info("[Gadget] finalisation-rescue: drain still running after %.1fs "
+                            "— stream left open for natural finish", time.monotonic() - t0)
+                try:
+                    asyncio.get_running_loop().create_task(
+                        _gadget_drain_watchdog(handle, consumer, 600.0))
+                except Exception:
+                    pass
+                return
             logger.info("[Gadget] finalisation-rescue: waited %.1fs (clean_end=%s)",
                         time.monotonic() - t0, clean_end)
             if not handle.out.closed:
