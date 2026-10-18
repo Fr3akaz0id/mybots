@@ -10,4 +10,4 @@ captures/
 *.log
 
 # gadget sdk for firmware headers/source
-hermes-gadget-sdk/
+hermes-gadget-sdk
