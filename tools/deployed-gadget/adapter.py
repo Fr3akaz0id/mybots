@@ -33,6 +33,7 @@ import re
 import ssl
 import time
 import uuid
+import weakref
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -97,6 +98,27 @@ def _flag(value: Any, default: bool) -> bool:
 # a backlog: narration never queues behind other audio (see _narrate).
 NARRATION_MAX_PER_TURN = 5
 NARRATION_ECHO_MAX_CHARS = 90
+# The thinking phrase narration speaks when the agent starts an API call and no other
+# phrase is mid-flight. The model's own phase is otherwise the longest silent gap of a
+# turn (tool.started is the only live-status source the gateway has). Deliberately NOT
+# passed through set_status_text(): the face follows the core screen (thinking = amber)
+# while this phrase only ever goes out as narration.
+NARRATION_THINK_PHRASE = "Thinking"
+
+# Adapters that observe stream hooks; the hook entry fans out per adapter. WeakSet so a
+# reloaded profile never narrates through a stale adapter instance.
+_STREAM_OBSERVERS: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def on_stream_start_hook(**payload: Any) -> None:
+    """Module-level entry for the gateway's ``on_stream_start`` hook, dispatched as kwargs
+    by the stream-hook worker. Off the token path: light work only, the heavy work is
+    scheduled onto the adapter loop by _maybe_narrate_status."""
+    for adapter in list(_STREAM_OBSERVERS):
+        try:
+            adapter.on_stream_start(payload)
+        except Exception:  # narration is decoration; the turn must survive it
+            logger.debug("[Gadget] on_stream_start failed", exc_info=True)
 
 
 def _narration_phrase(raw: str) -> str:
@@ -246,6 +268,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._registry_key = "default"
         self._prompts: Dict[str, List[_Prompt]] = {}  # device id -> questions, oldest (shown) first
         self._new_requested: Dict[str, float] = {}  # device id -> when it asked for a new session
+        _STREAM_OBSERVERS.add(self)  # observe on_stream_start for thinking-phase narration
 
     # -- lifecycle ------------------------------------------------------------------
 
@@ -575,6 +598,19 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             self._maybe_narrate_status(session, text)
 
     # -- narration: spoken color while the agent works --------------------------------
+
+    def on_stream_start(self, payload: Dict[str, Any]) -> None:
+        """Live model call starting (agent hook thread). For every device in this hub that
+        is in a live turn, narrate the thinking phase so the silence between utterance and
+        answer has an honest update. _maybe_narrate_status owns the guards: no turn state,
+        reply already started, budget, same-phrase dedup."""
+        if not self._narration or str(payload.get("surface") or "") != "gadget":
+            return
+        for device_id in list(self._narr_state):
+            session = self._session(device_id)
+            if session is None:
+                continue
+            self._maybe_narrate_status(session, NARRATION_THINK_PHRASE)
 
     def _maybe_narrate_status(self, session: DeviceSession, text: str) -> None:
         loop = self._loop
