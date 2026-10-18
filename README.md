@@ -90,7 +90,7 @@ no ad SDKs, no third-party services. Local-first is the whole point.
 - [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
   for the agent
 - [Adolanium/hermes-gadget-sdk](https://github.com/Adolanium/hermes-gadget-sdk)
-  solely for the gadget plugin and the SDK it is built on
+  for the gadget plugin and the SDK it is built on
 - [fayazara/robot-heads](https://github.com/fayazara/robot-heads) for the heads
 - [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for on-device
   wake word + ASR
