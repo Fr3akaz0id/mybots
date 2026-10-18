@@ -8,3 +8,6 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.log
+
+# gadget sdk for firmware headers/source
+hermes-gadget-sdk/
