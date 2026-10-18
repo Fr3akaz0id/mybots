@@ -33,9 +33,9 @@ Two ways to be running tonight:
 
 ## Screenshots
 
-| Head idle | Head thinking |
+| Head working | Head idle |
 |---|---|
-| ![head idle](docs/screens/head-idle.png) | ![head thinking](docs/screens/head-thinking.png) |
+| ![head working](docs/screens/head-working.png) | ![head idle](docs/screens/head-idle.png) |
 
 Longer demo clips (state range, page morphs, sleep) ship with the
 [Releases](../../releases) page.
