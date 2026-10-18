@@ -31,10 +31,10 @@ protocol are unchanged: gadget underneath, head on top.
 1. Install Android Studio (or the Android SDK + NDK) and JDK 17.
 2. Get the gadget firmware: clone
    [Adolanium/hermes-gadget-sdk](https://github.com/Adolanium/hermes-gadget-sdk)
-   and symlink `app/src/main/cpp/firmware` to `<sdk>/firmware`.
+   into the repo root (the committed `app/src/main/cpp/firmware` symlink
+   points there, and the directory is gitignored):
    ```
-   git clone https://github.com/Adolanium/hermes-gadget-sdk.git ../hermes-gadget-sdk
-   ln -s ../../../hermes-gadget-sdk/firmware app/src/main/cpp/firmware
+   git clone https://github.com/Adolanium/hermes-gadget-sdk.git
    ```
 3. Build:
    ```
