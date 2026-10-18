@@ -43,8 +43,11 @@ Longer demo clips (state range, page morphs, sleep) ship with the
 
 ## Requirements
 
-- A running Hermes Agent gateway with the gadget plugin enabled. The plugin
-  ships with hermes-agent; see its docs for setup.
+- A running Hermes Agent gateway, with the gadget plugin from this repo
+  enabled (`plugin/gadget/`, installed per [INSTALL.md](INSTALL.md)). It is
+  the same wire protocol as the stock plugin plus our fixes for long-answer
+  completion and work narration - that is what makes the head feel alive,
+  so prefer it over any other copy.
 - An Android device on the same network as your gateway (Android 8.0 / API 26+).
 
 ## Building from source

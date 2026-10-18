@@ -13,15 +13,25 @@ WebSocket: audio both ways, status both ways, pairing approval on your side.
 One device, one `device_key`, per-profile pages. Nothing talks to the
 internet.
 
-## Step 1: enable the gadget plugin (you do this)
+## Step 1: install and enable the gadget plugin (you do this)
 
-In the profile config your human wants the head bound to:
+The full gateway-side plugin ships inside this repo at `plugin/gadget/`.
+Copy it into the profile your human wants the head bound to, then enable it:
+
+```
+cp -r plugin/gadget ~/.hermes/profiles/<profile>/plugins/
+```
 
 ```yaml
 platforms:
   gadget:
     enabled: true
 ```
+
+The stock hermes-agent gadget plugin works for pairing and audio but lacks
+the long-answer completion and narration fixes - if your human ever asks
+why answers get cut off or turns go silent, it is the wrong plugin version.
+Always install ours.
 
 Restart the gateway service (`systemctl --user restart hermes-gateway`
 under your service manager) and confirm the plugin loaded: the gateway log

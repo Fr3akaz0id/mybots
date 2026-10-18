@@ -7,11 +7,23 @@ The phone talks to nothing else.
 **Fastest to done:** if you want your own agent to set this up for you, hand
 it [docs/INSTALL-agent.md](docs/INSTALL-agent.md) and come back at step 2.
 
-## 1. Enable the gadget plugin on your gateway
+## 1. Install the gadget plugin on your gateway
 
-The gadget plugin is part of hermes-agent. Pick the profile the head should
-drive (use `-p <profile>` throughout if you have more than one) and enable
-it in that profile's `config.yaml`:
+MyBots' hub side is our own plugin, and it ships inside this repo at
+`plugin/gadget/`. (The gadget plugin bundled with hermes-agent works for
+pairing and audio, but it lacks the fixes that make the experience good:
+long answers finish without being cut off, and the head narrates while the
+agent works. Those fixes live in ours.)
+
+Copy it where your gateway finds plugins - for one profile:
+
+```
+cp -r plugin/gadget ~/.hermes/profiles/<profile>/plugins/
+```
+
+...or globally in `~/.hermes/plugins/` if one install drives everything.
+Then enable it for the profile the head should drive (use `-p <profile>`
+throughout if you have more than one):
 
 ```yaml
 platforms:
@@ -19,13 +31,9 @@ platforms:
     enabled: true
 ```
 
-Restart the gateway. If you run several agent profiles and want the head to
-reach all of them, each profile needs its own port: `extra.port: 8766` for
-the second one (the first keeps the default `8765`).
-
-If anything about this step looks different on your install, the
-hermes-agent gadget docs are the source of truth; this file only shows the
-minimum.
+Restart the gateway. If several profiles should reach the head, each needs
+its own port: `extra.port: 8766` for the second one (the first keeps the
+default `8765`).
 
 ## 2. Install the app on the device
 

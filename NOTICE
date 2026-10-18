@@ -7,8 +7,9 @@ Full license texts are available at each upstream repository.
 Hermes Agent (hub side)
   https://github.com/NousResearch/hermes-agent
   Copyright (c) Nous Research. MIT license.
-  The gadget platform plugin snapshots under tools/deployed-gadget/ are
-  distributed here as MIT-licensed code with attribution.
+  Our gadget plugin (plugin/gadget/) builds on the gadget platform plugin
+  from hermes-agent and the hermes-gadget-sdk repo, both MIT, distributed
+  here with attribution and our fixes.
 
 Hermes Gadget SDK (device firmware core)
   https://github.com/Adolanium/hermes-gadget-sdk
