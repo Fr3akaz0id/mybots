@@ -1,93 +1,86 @@
-# hermes-gadget-android
+# MyBots
 
-Android port of the Hermes gadget client — multi-page pager, on-device KWS wake word, core firmware via jni_bridge
+An animated robot head for your Android device, powered by your self-hosted
+[Hermes Agent](https://github.com/NousResearch/hermes-agent). The head replaces
+the gadget core panel as the face of your agent: it listens, speaks, thinks,
+and reacts with you instead of behind a panel. Say "hey jarvis" and talk to it.
 
-## Getting started
+This is a fork of Hermes Gadget Android where the robot head (from
+[fayazara/robot-heads](https://github.com/fayazara/robot-heads)) replaces the
+core panel as the primary visual. The gadget core, JNI bridge, and wire
+protocol are unchanged: gadget underneath, head on top.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## What you get
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- Head mode on the home page: expressive robot face driven by agent state
+- States: sleeping, idle, thinking, listening, speaking, searching, error
+- On-device wake word (sherpa-onnx KWS, no cloud) plus push-to-talk
+- Swipe between hub pages; the head morphs while switching
+- Touch the head to poke it
+- Live status text on the strip under the head
+- Optional LED strip control over USB serial
 
-## Add your files
+## Requirements
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+- A running Hermes Agent gateway with the gadget plugin enabled. The plugin
+  ships with hermes-agent; see its docs for setup.
+- An Android device on the same network as your gateway (Android 8.0 / API 26+).
 
-```
-cd existing_repo
-git remote add origin http://example.invalid/hermes/hermes-gadget-android.git
-git branch -M main
-git push -uf origin main
-```
+## Building from source
 
-## Integrate with your tools
+1. Install Android Studio (or the Android SDK + NDK) and JDK 17.
+2. Get the gadget firmware: clone
+   [Adolanium/hermes-gadget-sdk](https://github.com/Adolanium/hermes-gadget-sdk)
+   and symlink `app/src/main/cpp/firmware` to `<sdk>/firmware`.
+   ```
+   git clone https://github.com/Adolanium/hermes-gadget-sdk.git ../hermes-gadget-sdk
+   ln -s ../../../hermes-gadget-sdk/firmware app/src/main/cpp/firmware
+   ```
+3. Build:
+   ```
+   ./gradlew assembleDebug
+   ```
+   The sherpa-onnx runtime and the KWS wake-word model are vendored in the
+   repository, no extra downloads needed.
 
-* [Set up project integrations](http://example.invalid/hermes/hermes-gadget-android/-/settings/integrations)
+## Connecting to your hub
 
-## Collaborate with your team
+1. On first start, the app asks for the hub WebSocket URL (gateway endpoint).
+2. The gadget plugin on the gateway shows a pairing code. Approve it there.
+3. The device stores its `device_key` and reconnects automatically from then on.
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+## Privacy
 
-## Test and Deploy
+The app talks to exactly one endpoint: your own hub URL. Audio goes from the
+microphone to your gateway and nothing else leaves the device. No analytics,
+no ad SDKs, no third-party services. Local-first is the whole point.
 
-Use the built-in continuous integration in GitLab.
+## How it works (short version)
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+- The Java/Kotlin app embeds the gadget core firmware (C++) via a JNI bridge,
+  the same one the ESP32 gadget firmware uses.
+- The head is a WebView running a bundled bundle of robot-heads rendering code
+  (`js/mybots-head.ts`). The app drives it with a small `window.MB` API:
+  state, size, color, poke.
+- A 300 ms poller derives the head state from the engine session, audio route,
+  and touch: sleeping, error, searching, listening, speaking, thinking, idle.
+- Head pages (pager) and touch arbitration are inherited from the gadget app.
 
-***
+## Credits
 
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+- [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) for
+  the agent and the gadget plugin
+- [Adolanium/hermes-gadget-sdk](https://github.com/Adolanium/hermes-gadget-sdk)
+  for the gadget core firmware
+- [fayazara/robot-heads](https://github.com/fayazara/robot-heads) for the heads
+- [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for on-device
+  wake word + ASR
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+MIT, see [LICENSE](LICENSE). Third-party attributions in
+[NOTICE](NOTICE).
+
+MyBots is a community fork, not affiliated with or endorsed by Nous Research.
+"Hermes" refers to their product; use "works with Hermes Agent" when describing
+compatibility.

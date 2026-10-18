@@ -1,0 +1,31 @@
+Third-party notices for MyBots
+==============================
+
+This project incorporates or builds against the following third-party work.
+Full license texts are available at each upstream repository.
+
+Hermes Agent (hub side)
+  https://github.com/NousResearch/hermes-agent
+  Copyright (c) Nous Research. MIT license.
+  The gadget platform plugin snapshots under tools/deployed-gadget/ are
+  distributed here as MIT-licensed code with attribution.
+
+Hermes Gadget SDK (device firmware core)
+  https://github.com/Adolanium/hermes-gadget-sdk
+  Copyright (c) 2026 Hermes Gadget SDK contributors. MIT license.
+  The firmware is consumed at build time via a symlink (see README); it is not
+  copied into this repository's source tree.
+
+robot-heads
+  https://github.com/fayazara/robot-heads
+  Copyright (c) Fayaz Ahmed. MIT license.
+  Vendored under third_party/robot-heads and bundled into the app assets.
+
+sherpa-onnx
+  https://github.com/k2-fsa/sherpa-onnx
+  Copyright (c) 2022 by k2-fsa (k2), sherpa-onnx contributors. Apache-2.0.
+  Bundled as libs/sherpa-onnx.aar without modification.
+
+KWS wake-word model
+  Pretrained zipformer keyword-spotting model from the sherpa-onnx model
+  ecosystem, Apache-2.0. Bundled under app/src/main/assets/kws/.
