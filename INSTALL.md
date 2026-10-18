@@ -10,10 +10,11 @@ it [docs/INSTALL-agent.md](docs/INSTALL-agent.md) and come back at step 2.
 ## 1. Install the gadget plugin on your gateway
 
 MyBots' hub side is our own plugin, and it ships inside this repo at
-`plugin/gadget/`. (The gadget plugin bundled with hermes-agent works for
-pairing and audio, but it lacks the fixes that make the experience good:
-long answers finish without being cut off, and the head narrates while the
-agent works. Those fixes live in ours.)
+`plugin/gadget/`. (The stock gadget plugin from
+[Adolanium/hermes-gadget-sdk](https://github.com/Adolanium/hermes-gadget-sdk)
+works for pairing and audio, but it lacks the fixes that make the experience
+good: long answers finish without being cut off, and the head narrates while
+the agent works. Those fixes live in ours.)
 
 Copy it where your gateway finds plugins - for one profile:
 

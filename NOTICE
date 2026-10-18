@@ -7,14 +7,14 @@ Full license texts are available at each upstream repository.
 Hermes Agent (hub side)
   https://github.com/NousResearch/hermes-agent
   Copyright (c) Nous Research. MIT license.
-  Our gadget plugin (plugin/gadget/) builds on the gadget platform plugin
-  from hermes-agent and the hermes-gadget-sdk repo, both MIT, distributed
-  here with attribution and our fixes.
+  The gateway our head talks to; not forked or modified by this project.
 
-Hermes Gadget SDK (device firmware core)
+Hermes Gadget SDK (gadget plugin + device firmware)
   https://github.com/Adolanium/hermes-gadget-sdk
   Copyright (c) 2026 Hermes Gadget SDK contributors. MIT license.
-  Vendored under third_party/hermes-gadget-firmware (sources + host tests;
+  The gadget plugin this project ships (plugin/gadget/) builds on this SDK's
+  hub-side plugin and wire protocol. Vendored firmware under
+  third_party/hermes-gadget-firmware (sources + host tests;
   LICENSES/ and THIRD_PARTY_NOTICES.md travel with it). This tree carries
   our firmware work on top of upstream - core-driven head state
   (ui_state_json), settle-grace, hold-to-talk arm gate, answered-prompt

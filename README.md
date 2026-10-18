@@ -45,9 +45,9 @@ Longer demo clips (state range, page morphs, sleep) ship with the
 
 - A running Hermes Agent gateway, with the gadget plugin from this repo
   enabled (`plugin/gadget/`, installed per [INSTALL.md](INSTALL.md)). It is
-  the same wire protocol as the stock plugin plus our fixes for long-answer
-  completion and work narration - that is what makes the head feel alive,
-  so prefer it over any other copy.
+  the same wire protocol as hermes-gadget-sdk's plugin plus our fixes for
+  long-answer completion and work narration - that is what makes the head
+  feel alive, so prefer it over any other copy.
 - An Android device on the same network as your gateway (Android 8.0 / API 26+).
 
 ## Building from source
@@ -87,10 +87,10 @@ no ad SDKs, no third-party services. Local-first is the whole point.
 
 ## Credits
 
-- [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) for
-  the agent and the gadget plugin
+- [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
+  for the agent
 - [Adolanium/hermes-gadget-sdk](https://github.com/Adolanium/hermes-gadget-sdk)
-  for the gadget core firmware
+  solely for the gadget plugin and the SDK it is built on
 - [fayazara/robot-heads](https://github.com/fayazara/robot-heads) for the heads
 - [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for on-device
   wake word + ASR
