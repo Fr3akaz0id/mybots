@@ -10,6 +10,17 @@ This is a fork of Hermes Gadget Android where the robot head (from
 core panel as the primary visual. The gadget core, JNI bridge, and wire
 protocol are unchanged: gadget underneath, head on top.
 
+![MyBots showing the head state range](docs/hero-states.gif)
+
+## Install
+
+Two ways to be running tonight:
+
+- **Human:** [INSTALL.md](INSTALL.md) - APK from Releases, hub config, pairing.
+- **Your agent does it:** hand this file to it: [docs/INSTALL-agent.md](docs/INSTALL-agent.md) -
+  step-by-step the agent half of the setup, the hub commands, and verify gates.
+
+
 ## What you get
 
 - Head mode on the home page: expressive robot face driven by agent state
@@ -19,6 +30,16 @@ protocol are unchanged: gadget underneath, head on top.
 - Touch the head to poke it
 - Live status text on the strip under the head
 - Optional LED strip control over USB serial
+
+## Screenshots
+
+| Head idle | Head thinking |
+|---|---|
+| ![head idle](docs/screens/head-idle.png) | ![head thinking](docs/screens/head-thinking.png) |
+
+Longer demo clips (state range, page morphs, sleep) ship with the
+[Releases](../../releases) page.
+
 
 ## Requirements
 
