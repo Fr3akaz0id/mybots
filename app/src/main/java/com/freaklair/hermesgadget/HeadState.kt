@@ -25,7 +25,9 @@ enum class HeadState {
             // A live tool/status phrase is the strongest "doing stuff" signal we have —
             // it outranks the screen heuristic, so a slow API call or web search shows
             // working/searching even while the core itself has timed out to idle.
-            if (st.isNotEmpty()) return if ("search" in st) SEARCHING else WORKING
+            // The core's local "Sending..." is NOT a tool phrase: it just means the
+            // message is queued/awaiting the reply — the screen decides its face then.
+            if (st.isNotEmpty() && st != "sending...") return if ("search" in st) SEARCHING else WORKING
             return when {
                 ui.screen == "thinking" || ui.screen == "responding" ->
                     // Composing the reply / generating audio without a status line.
