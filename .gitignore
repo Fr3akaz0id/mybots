@@ -11,3 +11,7 @@ captures/
 
 # gadget sdk for firmware headers/source
 hermes-gadget-sdk
+
+# vendored firmware build output
+third_party/hermes-gadget-firmware/build*/
+third_party/hermes-gadget-firmware/**/build*/

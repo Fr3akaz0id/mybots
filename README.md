@@ -50,14 +50,9 @@ Longer demo clips (state range, page morphs, sleep) ship with the
 ## Building from source
 
 1. Install Android Studio (or the Android SDK + NDK) and JDK 17.
-2. Get the gadget firmware: clone
-   [Adolanium/hermes-gadget-sdk](https://github.com/Adolanium/hermes-gadget-sdk)
-   into the repo root (the committed `app/src/main/cpp/firmware` symlink
-   points there, and the directory is gitignored):
-   ```
-   git clone https://github.com/Adolanium/hermes-gadget-sdk.git
-   ```
-3. Build:
+2. Get the gadget firmware: it is vendored in
+   `third_party/hermes-gadget-firmware` (see [NOTICE](NOTICE)), so nothing to
+   fetch. Build:
    ```
    ./gradlew assembleDebug
    ```

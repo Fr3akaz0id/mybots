@@ -13,8 +13,12 @@ Hermes Agent (hub side)
 Hermes Gadget SDK (device firmware core)
   https://github.com/Adolanium/hermes-gadget-sdk
   Copyright (c) 2026 Hermes Gadget SDK contributors. MIT license.
-  The firmware is consumed at build time via a symlink (see README); it is not
-  copied into this repository's source tree.
+  Vendored under third_party/hermes-gadget-firmware (sources + host tests;
+  LICENSES/ and THIRD_PARTY_NOTICES.md travel with it). This tree carries
+  our firmware work on top of upstream - core-driven head state
+  (ui_state_json), settle-grace, hold-to-talk arm gate, answered-prompt
+  behavior, and status fixes - which upstream does not contain yet.
+  Upstreaming is in progress; the app is built against the vendored tree.
 
 robot-heads
   https://github.com/fayazara/robot-heads
