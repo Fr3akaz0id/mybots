@@ -266,7 +266,17 @@ class DeviceSession:
     async def send_json(self, obj: dict) -> None:
         payload = json.dumps({k: v for k, v in obj.items() if v is not None}, separators=(",", ":"))
         async with self._send_lock:
-            await self._ws.send(payload)
+            try:
+                await self._ws.send(payload)
+            except Exception as exc:
+                from websockets.exceptions import ConnectionClosed
+                if not isinstance(exc, ConnectionClosed):
+                    raise
+                # The phone dropped or reconnected mid-turn. This send is a
+                # cosmetic signal (turn.end / status / notice); the next turn
+                # rides the fresh connection. Swallow so it doesn't fail the
+                # caller's hook and spam the journal on every reconnect.
+                log.debug("send dropped (%s): %s", self.device_id, exc)
 
     async def send_binary(self, data: bytes) -> None:
         async with self._send_lock:
